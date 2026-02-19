@@ -33,7 +33,7 @@ export const ActivityPage: FC<ActivityProps> = ({ user, isSuperadmin, flash, log
           <thead>
             <tr>
               <th>Time</th>
-              <th>Agent</th>
+              <th>User</th>
               <th>Tool</th>
               <th>Summary</th>
               <th>Status</th>
@@ -43,7 +43,7 @@ export const ActivityPage: FC<ActivityProps> = ({ user, isSuperadmin, flash, log
             {logs.map((a) => (
               <tr key={a.id}>
                 <td class="mono nowrap">{new Date(a.created_at).toLocaleString()}</td>
-                <td>{a.agent_label ?? '—'}</td>
+                <td>{a.user_name ?? a.agent_label ?? '—'}</td>
                 <td class="mono">{a.tool_name}</td>
                 <td class="truncate">{a.input_summary ?? ''}</td>
                 <td>

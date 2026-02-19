@@ -50,7 +50,13 @@ export function registerProjectTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
-      const projects = await db.all('SELECT * FROM projects ORDER BY created_at DESC');
+      const projects = await db.all(`
+        SELECT p.*, COUNT(pm.user_id) AS member_count
+        FROM projects p
+        LEFT JOIN project_members pm ON pm.project_id = p.id
+        GROUP BY p.id
+        ORDER BY p.created_at DESC
+      `);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'projects_list', success: true });
       const result = { projects };
       return { structuredContent: result, content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
@@ -74,7 +80,13 @@ export function registerProjectTools(server: McpServer) {
         FROM project_members pm JOIN users u ON pm.user_id = u.id
         WHERE pm.project_id = ?
       `, project_id);
-      const tasks = await db.all('SELECT * FROM tasks WHERE project_id = ? ORDER BY created_at DESC', project_id);
+      const tasks = await db.all(`
+        SELECT t.*, u.name AS assignee_name
+        FROM tasks t
+        LEFT JOIN users u ON t.assigned_to = u.id
+        WHERE t.project_id = ?
+        ORDER BY t.created_at DESC
+      `, project_id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'projects_get', success: true });
       const result = { project, members, tasks };
       return { structuredContent: result, content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };

@@ -4,6 +4,18 @@ import { getDb, logActivity } from '../../db.ts';
 import { generateId } from '../../utils/crypto.ts';
 import { notifyResourceChange } from '../resources.ts';
 
+// Enriched task query — joins project name and assignee name so the AI never
+// has to cross-reference raw IDs.
+const ENRICHED_TASK_SQL = `
+  SELECT
+    t.*,
+    p.name  AS project_name,
+    u.name  AS assignee_name
+  FROM tasks t
+  LEFT JOIN projects p ON t.project_id = p.id
+  LEFT JOIN users   u ON t.assigned_to = u.id
+`;
+
 export function registerTaskTools(server: McpServer) {
   // tasks_create
   server.tool(
@@ -21,6 +33,7 @@ export function registerTaskTools(server: McpServer) {
     async ({ project_id, title, description, priority, assigned_to, due_date }, extra) => {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
+      const createdByLabel = user?.name ?? agentLabel;
       const db = getDb();
 
       // Validate assignee is a confirmed, non-disabled project member
@@ -38,9 +51,9 @@ export function registerTaskTools(server: McpServer) {
       await db.run(`
         INSERT INTO tasks (id, project_id, title, description, status, priority, assigned_to, created_by, due_date, created_at, updated_at)
         VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
-      `, id, project_id, title, description ?? null, priority, assigned_to ?? null, agentLabel, due_date ?? null, now, now);
+      `, id, project_id, title, description ?? null, priority, assigned_to ?? null, createdByLabel, due_date ?? null, now, now);
 
-      const task = await db.get('SELECT * FROM tasks WHERE id = ?', id);
+      const task = await db.get(`${ENRICHED_TASK_SQL} WHERE t.id = ?`, id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_create', input_summary: JSON.stringify({ project_id, title }).slice(0, 500), success: true });
       notifyResourceChange();
       const result = { task };
@@ -65,12 +78,12 @@ export function registerTaskTools(server: McpServer) {
 
       const conditions: string[] = [];
       const params: any[] = [];
-      if (project_id) { conditions.push('project_id = ?'); params.push(project_id); }
-      if (status) { conditions.push('status = ?'); params.push(status); }
-      if (assigned_to) { conditions.push('assigned_to = ?'); params.push(assigned_to); }
+      if (project_id) { conditions.push('t.project_id = ?'); params.push(project_id); }
+      if (status) { conditions.push('t.status = ?'); params.push(status); }
+      if (assigned_to) { conditions.push('t.assigned_to = ?'); params.push(assigned_to); }
 
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-      const tasks = await db.all(`SELECT * FROM tasks ${where} ORDER BY created_at DESC`, ...params);
+      const tasks = await db.all(`${ENRICHED_TASK_SQL} ${where} ORDER BY t.created_at DESC`, ...params);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_list', success: true });
       const result = { tasks };
       return { structuredContent: result, content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
@@ -87,11 +100,17 @@ export function registerTaskTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
-      const task = await db.get('SELECT * FROM tasks WHERE id = ?', task_id);
+      const task = await db.get(`${ENRICHED_TASK_SQL} WHERE t.id = ?`, task_id);
       if (!task) throw new Error(`Task not found: ${task_id}`);
       const comments = await db.all('SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC', task_id);
-      const blocks = await db.all('SELECT blocked_task_id FROM task_dependencies WHERE task_id = ?', task_id);
-      const blockedBy = await db.all('SELECT task_id FROM task_dependencies WHERE blocked_task_id = ?', task_id);
+      const blocks = await db.all(
+        `SELECT td.blocked_task_id AS id, t.title FROM task_dependencies td JOIN tasks t ON td.blocked_task_id = t.id WHERE td.task_id = ?`,
+        task_id,
+      );
+      const blockedBy = await db.all(
+        `SELECT td.task_id AS id, t.title FROM task_dependencies td JOIN tasks t ON td.task_id = t.id WHERE td.blocked_task_id = ?`,
+        task_id,
+      );
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_get', success: true });
       const result = { task, comments, blocks, blockedBy };
       return { structuredContent: result, content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
@@ -130,7 +149,7 @@ export function registerTaskTools(server: McpServer) {
         priority ?? null, due_date !== undefined ? 1 : null, due_date ?? null,
         now, task_id,
       );
-      const updated = await db.get('SELECT * FROM tasks WHERE id = ?', task_id);
+      const updated = await db.get(`${ENRICHED_TASK_SQL} WHERE t.id = ?`, task_id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_update', success: true });
       notifyResourceChange();
       const result = { task: updated };
@@ -156,7 +175,7 @@ export function registerTaskTools(server: McpServer) {
       await db.run(`
         UPDATE tasks SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?
       `, status, completedAt, now, task_id);
-      const task = await db.get('SELECT * FROM tasks WHERE id = ?', task_id);
+      const task = await db.get(`${ENRICHED_TASK_SQL} WHERE t.id = ?`, task_id);
       if (!task) throw new Error(`Task not found: ${task_id}`);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_set_status', input_summary: JSON.stringify({ task_id, status }), success: true });
       notifyResourceChange();
@@ -201,7 +220,10 @@ export function registerTaskTools(server: McpServer) {
         `UPDATE tasks SET assigned_to = ?, updated_at = ? WHERE id IN (${placeholders})`,
         user_id, now, ...task_ids,
       );
-      const updated = await db.all(`SELECT * FROM tasks WHERE id IN (${placeholders})`, ...task_ids);
+      const updated = await db.all(
+        `${ENRICHED_TASK_SQL} WHERE t.id IN (${placeholders}) ORDER BY t.created_at DESC`,
+        ...task_ids,
+      );
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_assign', input_summary: JSON.stringify({ task_ids, user_id }).slice(0, 500), success: true });
       notifyResourceChange();
       const result = { tasks: updated };
@@ -239,13 +261,14 @@ export function registerTaskTools(server: McpServer) {
     async ({ task_id, content }, extra) => {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
+      const createdByLabel = user?.name ?? agentLabel;
       const db = getDb();
       const id = generateId();
       const now = new Date().toISOString();
       await db.run(`
         INSERT INTO task_comments (id, task_id, content, created_by, created_at)
         VALUES (?, ?, ?, ?, ?)
-      `, id, task_id, content, agentLabel, now);
+      `, id, task_id, content, createdByLabel, now);
       const comment = await db.get('SELECT * FROM task_comments WHERE id = ?', id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_add_comment', success: true });
       notifyResourceChange();

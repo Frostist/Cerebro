@@ -8,9 +8,10 @@ interface ProjectsListProps {
   isSuperadmin: boolean;
   flash?: { type: 'success' | 'error'; message: string } | null;
   projects: any[];
+  csrfToken: string;
 }
 
-export const ProjectsListPage: FC<ProjectsListProps> = ({ user, isSuperadmin, flash, projects }) => {
+export const ProjectsListPage: FC<ProjectsListProps> = ({ user, isSuperadmin, flash, projects, csrfToken }) => {
   return (
     <Layout title="Projects" user={user} isSuperadmin={isSuperadmin} flash={flash}>
       <div class="page-header">
@@ -40,6 +41,7 @@ export const ProjectsListPage: FC<ProjectsListProps> = ({ user, isSuperadmin, fl
                 <td>
                   <form method="post" action={`/admin/projects/${p.id}/delete`}
                     onsubmit={`return confirm('Delete project "${p.name}" and all its tasks?')`}>
+                    <input type="hidden" name="_csrf" value={csrfToken} />
                     <button type="submit" class="btn btn-sm btn-danger">Delete</button>
                   </form>
                 </td>

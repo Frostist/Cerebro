@@ -139,7 +139,11 @@ adminRouter.get('/admin', async (c) => {
     overdueTasks: ((await db.get("SELECT COUNT(*) as n FROM tasks WHERE due_date < ? AND status NOT IN ('completed','cancelled')", now)) as any).n,
     dueSoonTasks: ((await db.get("SELECT COUNT(*) as n FROM tasks WHERE due_date >= ? AND due_date <= ? AND status NOT IN ('completed','cancelled')", now, in24h)) as any).n,
   };
-  const recentActivity = await db.all('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 10');
+  const recentActivity = await db.all(`
+    SELECT al.*, u.name as user_name FROM activity_log al
+    LEFT JOIN users u ON al.user_id = u.id
+    ORDER BY al.created_at DESC LIMIT 10
+  `);
 
   return c.html(<DashboardPage user={user} isSuperadmin={isSuperadmin} flash={flash} stats={stats} recentActivity={recentActivity} />);
 });
@@ -316,6 +320,23 @@ adminRouter.post('/admin/users/:id/regenerate-creds', async (c) => {
   return c.redirect(`/admin/users/${subject.id}/credentials?token=${viewToken}`);
 });
 
+adminRouter.post('/admin/users/:id/rename', async (c) => {
+  if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
+  const body = await c.req.parseBody();
+  const name = (body['name'] as string)?.trim();
+  if (!name) {
+    setFlash(c, 'error', 'Name cannot be empty.');
+    return c.redirect(`/admin/users/${c.req.param('id')}`);
+  }
+  const db = getDb();
+  const subject = await db.get('SELECT * FROM users WHERE id = ?', c.req.param('id')) as any;
+  if (!subject) return c.text('Not found', 404);
+  await db.run('UPDATE users SET name = ?, updated_at = ? WHERE id = ?', name, new Date().toISOString(), subject.id);
+  logActivity({ user_id: (c.get('user') as any).id, agent_label: null, tool_name: 'admin:rename_user', success: true, input_summary: `renamed user ${subject.username} to ${name}` });
+  setFlash(c, 'success', `User renamed to "${name}".`);
+  return c.redirect(`/admin/users/${c.req.param('id')}`);
+});
+
 adminRouter.post('/admin/users/:id/revoke-token', async (c) => {
   if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
   await getDb().run('DELETE FROM oauth_tokens WHERE user_id = ?', c.req.param('id'));
@@ -354,8 +375,9 @@ adminRouter.get('/admin/projects', async (c) => {
   const user = c.get('user') as any;
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   const flash = getFlash(c);
+  const csrfToken = c.get('csrfToken') as string;
   const projects = await getDb().all('SELECT * FROM projects ORDER BY created_at DESC');
-  return c.html(<ProjectsListPage user={user} isSuperadmin={isSuperadmin} flash={flash} projects={projects} />);
+  return c.html(<ProjectsListPage user={user} isSuperadmin={isSuperadmin} flash={flash} projects={projects} csrfToken={csrfToken} />);
 });
 
 adminRouter.get('/admin/projects/:id', async (c) => {
@@ -395,8 +417,8 @@ adminRouter.get('/admin/activity', async (c) => {
   const filterUserId = c.req.query('user_id');
   const db = getDb();
   const logs = filterUserId
-    ? await db.all('SELECT * FROM activity_log WHERE user_id = ? ORDER BY created_at DESC LIMIT 500', filterUserId)
-    : await db.all('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 500');
+    ? await db.all(`SELECT al.*, u.name as user_name FROM activity_log al LEFT JOIN users u ON al.user_id = u.id WHERE al.user_id = ? ORDER BY al.created_at DESC LIMIT 500`, filterUserId)
+    : await db.all(`SELECT al.*, u.name as user_name FROM activity_log al LEFT JOIN users u ON al.user_id = u.id ORDER BY al.created_at DESC LIMIT 500`);
   const users = await db.all('SELECT id, username, name FROM users ORDER BY username ASC');
   return c.html(<ActivityPage user={user} isSuperadmin={isSuperadmin} flash={flash} logs={logs} users={users} filterUserId={filterUserId} />);
 });
