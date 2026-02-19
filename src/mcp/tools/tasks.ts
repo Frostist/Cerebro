@@ -260,7 +260,7 @@ export function registerTaskTools(server: McpServer) {
       const db = getDb();
       await db.run('DELETE FROM task_dependencies WHERE task_id = ?', task_id);
       for (const blockedId of blocks_task_ids) {
-        await db.run('INSERT OR IGNORE INTO task_dependencies (task_id, blocked_task_id) VALUES (?, ?)', task_id, blockedId);
+        await db.run('INSERT INTO task_dependencies (task_id, blocked_task_id) VALUES (?, ?) ON CONFLICT DO NOTHING', task_id, blockedId);
       }
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_set_dependencies', success: true });
       notifyResourceChange();

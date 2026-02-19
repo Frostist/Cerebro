@@ -99,8 +99,9 @@ export function registerProjectTools(server: McpServer) {
       if (!member || !member.confirmed || member.disabled) throw new Error('User not available');
       const now = new Date().toISOString();
       await db.run(`
-        INSERT OR REPLACE INTO project_members (project_id, user_id, role, assigned_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO project_members (project_id, user_id, role, assigned_at)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (project_id, user_id) DO UPDATE SET role = $3, assigned_at = $4
       `, project_id, user_id, role, now);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'projects_assign_member', success: true });
       notifyResourceChange();
