@@ -4,7 +4,10 @@ import { getDb } from '../db.ts';
 export async function bearerAuth(c: Context<any>, next: Next) {
   const auth = c.req.header('Authorization');
   if (!auth?.startsWith('Bearer ')) {
-    return c.json({ error: 'unauthorized' }, 401);
+    const base = (process.env.BASE_URL ?? '').replace(/\/$/, '');
+    return c.json({ error: 'unauthorized' }, 401, {
+      'WWW-Authenticate': `Bearer realm="${base}", resource_metadata="${base}/.well-known/oauth-protected-resource"`,
+    });
   }
 
   const token = auth.slice(7);

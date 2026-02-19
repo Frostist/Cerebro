@@ -37,9 +37,11 @@ app.use('/static/*', serveStatic({ root: './src' }));
 app.route('/', oauthRouter);
 app.route('/', adminRouter);
 
-// ─── MCP — SSE-compatible endpoint (GET /mcp/sse) ────────────────────────────
+// ─── MCP — SSE-compatible endpoint (GET + POST /mcp/sse) ─────────────────────
+// Claude.ai sends both GET (to open the SSE stream) and POST (to send messages)
+// to the same /mcp/sse URL, so we handle both methods here.
 
-app.get('/mcp/sse', bearerAuth, async (c) => {
+app.all('/mcp/sse', bearerAuth, async (c) => {
   const user = c.get('user');
   const agentLabel = c.get('agentLabel') ?? user?.username ?? 'unknown';
   return handleMcpRequest(c.req.raw, user, agentLabel);
@@ -89,7 +91,12 @@ function buildMcpServer(): McpServer {
 await initDb();
 
 const port = Number(process.env.PORT ?? 3000);
-const base = process.env.BASE_URL ?? `http://localhost:${port}`;
+let base = process.env.BASE_URL ?? `http://localhost:${port}`;
+// Ensure BASE_URL always has a protocol (Railway sometimes strips it)
+if (base && !base.startsWith('http://') && !base.startsWith('https://')) {
+  base = `https://${base}`;
+}
+base = base.replace(/\/$/, '');
 
 console.log(`✅  MCP SSE:         ${base}/mcp/sse`);
 console.log(`✅  MCP HTTP:        ${base}/mcp`);

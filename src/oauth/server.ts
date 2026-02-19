@@ -20,9 +20,17 @@ function checkRateLimit(ip: string): boolean {
 
 export const oauthRouter = new Hono();
 
+function getBase(): string {
+  let base = process.env.BASE_URL ?? '';
+  if (base && !base.startsWith('http://') && !base.startsWith('https://')) {
+    base = `https://${base}`;
+  }
+  return base.replace(/\/$/, '');
+}
+
 // OAuth Authorization Server Metadata
 oauthRouter.get('/.well-known/oauth-authorization-server', (c) => {
-  const base = process.env.BASE_URL ?? '';
+  const base = getBase();
   return c.json({
     issuer: base,
     authorization_endpoint: `${base}/oauth/authorize`,
@@ -36,7 +44,7 @@ oauthRouter.get('/.well-known/oauth-authorization-server', (c) => {
 
 // Protected Resource Metadata
 oauthRouter.get('/.well-known/oauth-protected-resource', (c) => {
-  const base = process.env.BASE_URL ?? '';
+  const base = getBase();
   return c.json({
     resource: base,
     authorization_servers: [base],
