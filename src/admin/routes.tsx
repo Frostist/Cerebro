@@ -340,6 +340,7 @@ adminRouter.post('/admin/users/:id/delete', async (c) => {
   await db.run('DELETE FROM oauth_tokens WHERE user_id = ?', subject.id);
   await db.run('DELETE FROM admin_sessions WHERE user_id = ?', subject.id);
   await db.run('DELETE FROM auth_codes WHERE user_id = ?', subject.id);
+  await db.run('DELETE FROM activity_log WHERE user_id = ?', subject.id);
   await db.run('DELETE FROM users WHERE id = ?', subject.id);
 
   logActivity({ user_id: (c.get('user') as any).id, agent_label: null, tool_name: 'admin:delete_user', success: true, input_summary: `deleted user ${subject.username}` });
