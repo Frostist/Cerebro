@@ -42,15 +42,19 @@ oauthRouter.get('/.well-known/oauth-authorization-server', (c) => {
   });
 });
 
-// Protected Resource Metadata
-oauthRouter.get('/.well-known/oauth-protected-resource', (c) => {
+// Protected Resource Metadata (RFC 9728)
+// Claude connectors also probe /.well-known/oauth-protected-resource/<resource-path>
+// (e.g. /.well-known/oauth-protected-resource/mcp/sse), so handle both forms.
+function protectedResourceMetadata(c: any) {
   const base = getBase();
   return c.json({
     resource: base,
     authorization_servers: [base],
     bearer_methods_supported: ['header'],
   });
-});
+}
+oauthRouter.get('/.well-known/oauth-protected-resource', protectedResourceMetadata);
+oauthRouter.get('/.well-known/oauth-protected-resource/*', protectedResourceMetadata);
 
 // GET /oauth/authorize — show login form
 oauthRouter.get('/oauth/authorize', (c) => {
