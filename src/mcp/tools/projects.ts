@@ -28,6 +28,15 @@ export function registerProjectTools(server: McpServer) {
           VALUES (?, ?, ?, ?, ?, ?)
         `, id, name, description ?? null, createdBy, now, now);
 
+        // Automatically add the creator as an owner in project_members
+        if (user?.id) {
+          await db.run(`
+            INSERT INTO project_members (project_id, user_id, role, assigned_at)
+            VALUES (?, ?, 'owner', ?)
+            ON CONFLICT (project_id, user_id) DO NOTHING
+          `, id, user.id, now);
+        }
+
         const project = await db.get('SELECT * FROM projects WHERE id = ?', id) as any;
         logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'projects_create', input_summary: JSON.stringify({ name }).slice(0, 500), success: true });
         notifyResourceChange();
@@ -50,13 +59,17 @@ export function registerProjectTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
+
+      // Only return projects the caller is a member of
       const projects = await db.all(`
-        SELECT p.*, COUNT(pm.user_id) AS member_count
+        SELECT p.*, COUNT(pm2.user_id) AS member_count
         FROM projects p
-        LEFT JOIN project_members pm ON pm.project_id = p.id
+        JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ?
+        LEFT JOIN project_members pm2 ON pm2.project_id = p.id
         GROUP BY p.id
         ORDER BY p.created_at DESC
-      `);
+      `, user?.id ?? '');
+
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'projects_list', success: true });
       const result = { projects };
       return { structuredContent: result, content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
@@ -73,6 +86,11 @@ export function registerProjectTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
+
+      // Verify caller is a member of this project
+      const membership = await db.get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', project_id, user?.id ?? '');
+      if (!membership) throw new Error(`Project not found: ${project_id}`);
+
       const project = await db.get('SELECT * FROM projects WHERE id = ?', project_id);
       if (!project) throw new Error(`Project not found: ${project_id}`);
       const members = await db.all(`
@@ -107,6 +125,11 @@ export function registerProjectTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
+
+      // Caller must already be a member of this project to add others
+      const membership = await db.get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', project_id, user?.id ?? '');
+      if (!membership) throw new Error(`Project not found: ${project_id}`);
+
       const member = await db.get('SELECT id, confirmed, disabled FROM users WHERE id = ?', user_id) as any;
       if (!member || !member.confirmed || member.disabled) throw new Error('User not available');
       const now = new Date().toISOString();
@@ -132,6 +155,11 @@ export function registerProjectTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
+
+      // Caller must be a member of this project to remove others
+      const membership = await db.get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', project_id, user?.id ?? '');
+      if (!membership) throw new Error(`Project not found: ${project_id}`);
+
       await db.run('DELETE FROM project_members WHERE project_id = ? AND user_id = ?', project_id, user_id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'projects_remove_member', success: true });
       notifyResourceChange();
@@ -150,6 +178,11 @@ export function registerProjectTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
+
+      // Caller must be a member of this project to delete it
+      const membership = await db.get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', project_id, user?.id ?? '');
+      if (!membership) throw new Error(`Project not found: ${project_id}`);
+
       await db.run('DELETE FROM projects WHERE id = ?', project_id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'projects_delete', success: true });
       notifyResourceChange();

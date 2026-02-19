@@ -98,20 +98,27 @@ assign_unassigned_tasks → Suggests assignees for unassigned tasks and offers t
       const now = new Date().toISOString();
       const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-      const totalTasks = ((await db.get('SELECT COUNT(*) as n FROM tasks')) as any).n;
-      const pendingTasks = ((await db.get("SELECT COUNT(*) as n FROM tasks WHERE status = 'pending'")) as any).n;
-      const inProgressTasks = ((await db.get("SELECT COUNT(*) as n FROM tasks WHERE status = 'in_progress'")) as any).n;
-      const completedTasks = ((await db.get("SELECT COUNT(*) as n FROM tasks WHERE status = 'completed'")) as any).n;
-      const cancelledTasks = ((await db.get("SELECT COUNT(*) as n FROM tasks WHERE status = 'cancelled'")) as any).n;
+      const userId = user?.id ?? '';
+      // All counts are scoped to projects the caller is a member of
+      const memberFilter = 'EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = t.project_id AND pm.user_id = ?)';
+
+      const totalTasks = ((await db.get(`SELECT COUNT(*) as n FROM tasks t WHERE ${memberFilter}`, userId)) as any).n;
+      const pendingTasks = ((await db.get(`SELECT COUNT(*) as n FROM tasks t WHERE t.status = 'pending' AND ${memberFilter}`, userId)) as any).n;
+      const inProgressTasks = ((await db.get(`SELECT COUNT(*) as n FROM tasks t WHERE t.status = 'in_progress' AND ${memberFilter}`, userId)) as any).n;
+      const completedTasks = ((await db.get(`SELECT COUNT(*) as n FROM tasks t WHERE t.status = 'completed' AND ${memberFilter}`, userId)) as any).n;
+      const cancelledTasks = ((await db.get(`SELECT COUNT(*) as n FROM tasks t WHERE t.status = 'cancelled' AND ${memberFilter}`, userId)) as any).n;
       const overdueTasks = ((await db.get(
-        "SELECT COUNT(*) as n FROM tasks WHERE due_date < ? AND status NOT IN ('completed','cancelled')",
-        now
+        `SELECT COUNT(*) as n FROM tasks t WHERE t.due_date < ? AND t.status NOT IN ('completed','cancelled') AND ${memberFilter}`,
+        now, userId
       )) as any).n;
       const dueSoonTasks = ((await db.get(
-        "SELECT COUNT(*) as n FROM tasks WHERE due_date >= ? AND due_date <= ? AND status NOT IN ('completed','cancelled')",
-        now, in24h
+        `SELECT COUNT(*) as n FROM tasks t WHERE t.due_date >= ? AND t.due_date <= ? AND t.status NOT IN ('completed','cancelled') AND ${memberFilter}`,
+        now, in24h, userId
       )) as any).n;
-      const totalProjects = ((await db.get('SELECT COUNT(*) as n FROM projects')) as any).n;
+      const totalProjects = ((await db.get(
+        'SELECT COUNT(*) as n FROM project_members WHERE user_id = ?',
+        userId
+      )) as any).n;
       const totalUsers = ((await db.get("SELECT COUNT(*) as n FROM users WHERE confirmed = 1 AND disabled = 0")) as any).n;
 
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'dashboard_get', success: true });
