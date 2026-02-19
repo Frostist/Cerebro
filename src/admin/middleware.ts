@@ -1,6 +1,7 @@
 import type { Context, Next } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { getDb } from '../db.ts';
+import { generateToken } from '../utils/crypto.ts';
 
 export async function adminAuth(c: Context<any>, next: Next) {
   const sessionId = getCookie(c, 'session');
@@ -31,9 +32,15 @@ export async function adminAuth(c: Context<any>, next: Next) {
     updated_at: session.updated_at,
   };
 
+  let csrfToken = session.csrf_token ?? '';
+  if (!csrfToken) {
+    csrfToken = generateToken();
+    await db.run('UPDATE admin_sessions SET csrf_token = ? WHERE id = ?', csrfToken, sessionId);
+  }
+
   c.set('user', user);
   c.set('isSuperadmin', user.email === process.env.SUPERADMIN_EMAIL);
-  c.set('csrfToken', session.csrf_token ?? '');
+  c.set('csrfToken', csrfToken);
 
   await next();
 }
