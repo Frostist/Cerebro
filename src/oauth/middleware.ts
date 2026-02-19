@@ -10,20 +10,20 @@ export async function bearerAuth(c: Context<any>, next: Next) {
   const token = auth.slice(7);
   const db = getDb();
 
-  const record = db.query(`
+  const record = await db.get(`
     SELECT t.*, u.id as u_id, u.name, u.email, u.username, u.role, u.confirmed, u.disabled
     FROM oauth_tokens t
     JOIN users u ON t.user_id = u.id
     WHERE t.access_token = ? AND t.expires_at > ?
-  `).get(token, new Date().toISOString()) as any;
+  `, token, new Date().toISOString()) as any;
 
   if (!record || record.disabled || !record.confirmed) {
     return c.json({ error: 'unauthorized' }, 401);
   }
 
   // Update last_used_at
-  db.query('UPDATE oauth_tokens SET last_used_at = ? WHERE access_token = ?')
-    .run(new Date().toISOString(), token);
+  await db.run('UPDATE oauth_tokens SET last_used_at = ? WHERE access_token = ?',
+    new Date().toISOString(), token);
 
   c.set('user', {
     id: record.u_id,

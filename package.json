@@ -10,8 +10,9 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "latest",
     "hono": "latest",
-    "zod": "latest",
-    "uuid": "latest"
+    "postgres": "^3.4.8",
+    "uuid": "latest",
+    "zod": "latest"
   },
   "devDependencies": {
     "@types/bun": "latest",

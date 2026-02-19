@@ -108,7 +108,7 @@ oauthRouter.post('/oauth/authorize', async (c) => {
   const { username, password, redirect_uri, code_challenge, code_challenge_method, state, agent_label } = body as Record<string, string>;
 
   const db = getDb();
-  const user = db.query('SELECT * FROM users WHERE username = ? AND disabled = 0 AND confirmed = 1').get(username) as any;
+  const user = await db.get('SELECT * FROM users WHERE username = ? AND disabled = 0 AND confirmed = 1', username) as any;
 
   if (!user || !(await Bun.password.verify(password, user.password_hash))) {
     // Re-show form with error
@@ -168,10 +168,10 @@ oauthRouter.post('/oauth/authorize', async (c) => {
   const code = generateToken();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
-  db.query(`
+  await db.run(`
     INSERT INTO auth_codes (code, user_id, code_challenge, expires_at, used)
     VALUES (?, ?, ?, ?, 0)
-  `).run(code, user.id, code_challenge, expiresAt);
+  `, code, user.id, code_challenge, expiresAt);
 
   // Store agent_label temporarily in auth_code by embedding in code (we'll use state)
   // Actually store it on the token after exchange; pass via query param to ourselves won't work
@@ -209,9 +209,9 @@ async function handleAuthCode(c: any, body: Record<string, string>) {
   const { code, code_verifier, redirect_uri } = body;
   const db = getDb();
 
-  const authCode = db.query(`
+  const authCode = await db.get(`
     SELECT * FROM auth_codes WHERE code = ? AND used = 0 AND expires_at > ?
-  `).get(code, new Date().toISOString()) as any;
+  `, code, new Date().toISOString()) as any;
 
   if (!authCode) return c.json({ error: 'invalid_grant' }, 400);
 
@@ -219,7 +219,7 @@ async function handleAuthCode(c: any, body: Record<string, string>) {
   if (!valid) return c.json({ error: 'invalid_grant' }, 400);
 
   // Mark used
-  db.query('UPDATE auth_codes SET used = 1 WHERE code = ?').run(code);
+  await db.run('UPDATE auth_codes SET used = 1 WHERE code = ?', code);
 
   const accessToken = generateToken();
   const refreshToken = generateToken();
@@ -230,12 +230,12 @@ async function handleAuthCode(c: any, body: Record<string, string>) {
   pendingAgentLabels.delete(code);
 
   // Revoke any existing token for this user
-  db.query('DELETE FROM oauth_tokens WHERE user_id = ?').run(authCode.user_id);
+  await db.run('DELETE FROM oauth_tokens WHERE user_id = ?', authCode.user_id);
 
-  db.query(`
+  await db.run(`
     INSERT INTO oauth_tokens (access_token, user_id, refresh_token, agent_label, expires_at, scope)
     VALUES (?, ?, ?, ?, ?, 'read write')
-  `).run(accessToken, authCode.user_id, refreshToken, agentLabel, expiresAt);
+  `, accessToken, authCode.user_id, refreshToken, agentLabel, expiresAt);
 
   return c.json({
     access_token: accessToken,
@@ -250,21 +250,21 @@ async function handleRefreshToken(c: any, body: Record<string, string>) {
   const { refresh_token } = body;
   const db = getDb();
 
-  const token = db.query('SELECT * FROM oauth_tokens WHERE refresh_token = ?').get(refresh_token) as any;
+  const token = await db.get('SELECT * FROM oauth_tokens WHERE refresh_token = ?', refresh_token) as any;
   if (!token) return c.json({ error: 'invalid_grant' }, 400);
 
   const accessToken = generateToken();
   const newRefresh = generateToken();
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
-  db.query(`
+  await db.run(`
     DELETE FROM oauth_tokens WHERE refresh_token = ?
-  `).run(refresh_token);
+  `, refresh_token);
 
-  db.query(`
+  await db.run(`
     INSERT INTO oauth_tokens (access_token, user_id, refresh_token, agent_label, expires_at, scope)
     VALUES (?, ?, ?, ?, ?, 'read write')
-  `).run(accessToken, token.user_id, newRefresh, token.agent_label, expiresAt);
+  `, accessToken, token.user_id, newRefresh, token.agent_label, expiresAt);
 
   return c.json({
     access_token: accessToken,

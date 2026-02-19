@@ -25,22 +25,22 @@ export function registerTaskTools(server: McpServer) {
 
       // Validate assignee is a confirmed, non-disabled project member
       if (assigned_to) {
-        const member = db.query(`
+        const member = await db.get(`
           SELECT pm.user_id FROM project_members pm
           JOIN users u ON pm.user_id = u.id
           WHERE pm.project_id = ? AND pm.user_id = ? AND u.confirmed = 1 AND u.disabled = 0
-        `).get(project_id, assigned_to);
+        `, project_id, assigned_to);
         if (!member) throw new Error('Assignee must be a confirmed, active project member');
       }
 
       const id = generateId();
       const now = new Date().toISOString();
-      db.query(`
+      await db.run(`
         INSERT INTO tasks (id, project_id, title, description, status, priority, assigned_to, created_by, due_date, created_at, updated_at)
         VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
-      `).run(id, project_id, title, description ?? null, priority, assigned_to ?? null, agentLabel, due_date ?? null, now, now);
+      `, id, project_id, title, description ?? null, priority, assigned_to ?? null, agentLabel, due_date ?? null, now, now);
 
-      const task = db.query('SELECT * FROM tasks WHERE id = ?').get(id);
+      const task = await db.get('SELECT * FROM tasks WHERE id = ?', id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_create', input_summary: JSON.stringify({ project_id, title }).slice(0, 500), success: true });
       notifyResourceChange();
       const result = { task };
@@ -70,7 +70,7 @@ export function registerTaskTools(server: McpServer) {
       if (assigned_to) { conditions.push('assigned_to = ?'); params.push(assigned_to); }
 
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-      const tasks = db.query(`SELECT * FROM tasks ${where} ORDER BY created_at DESC`).all(...params);
+      const tasks = await db.all(`SELECT * FROM tasks ${where} ORDER BY created_at DESC`, ...params);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_list', success: true });
       const result = { tasks };
       return { structuredContent: result, content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
@@ -87,11 +87,11 @@ export function registerTaskTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
-      const task = db.query('SELECT * FROM tasks WHERE id = ?').get(task_id);
+      const task = await db.get('SELECT * FROM tasks WHERE id = ?', task_id);
       if (!task) throw new Error(`Task not found: ${task_id}`);
-      const comments = db.query('SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC').all(task_id);
-      const blocks = db.query('SELECT blocked_task_id FROM task_dependencies WHERE task_id = ?').all(task_id);
-      const blockedBy = db.query('SELECT task_id FROM task_dependencies WHERE blocked_task_id = ?').all(task_id);
+      const comments = await db.all('SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC', task_id);
+      const blocks = await db.all('SELECT blocked_task_id FROM task_dependencies WHERE task_id = ?', task_id);
+      const blockedBy = await db.all('SELECT task_id FROM task_dependencies WHERE blocked_task_id = ?', task_id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_get', success: true });
       const result = { task, comments, blocks, blockedBy };
       return { structuredContent: result, content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
@@ -114,10 +114,10 @@ export function registerTaskTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
-      const task = db.query('SELECT * FROM tasks WHERE id = ?').get(task_id) as any;
+      const task = await db.get('SELECT * FROM tasks WHERE id = ?', task_id) as any;
       if (!task) throw new Error(`Task not found: ${task_id}`);
       const now = new Date().toISOString();
-      db.query(`
+      await db.run(`
         UPDATE tasks SET
           title = COALESCE(?, title),
           description = CASE WHEN ? IS NOT NULL THEN ? ELSE description END,
@@ -125,12 +125,12 @@ export function registerTaskTools(server: McpServer) {
           due_date = CASE WHEN ? IS NOT NULL THEN ? ELSE due_date END,
           updated_at = ?
         WHERE id = ?
-      `).run(
+      `,
         title ?? null, description !== undefined ? 1 : null, description ?? null,
         priority ?? null, due_date !== undefined ? 1 : null, due_date ?? null,
         now, task_id,
       );
-      const updated = db.query('SELECT * FROM tasks WHERE id = ?').get(task_id);
+      const updated = await db.get('SELECT * FROM tasks WHERE id = ?', task_id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_update', success: true });
       notifyResourceChange();
       const result = { task: updated };
@@ -153,10 +153,10 @@ export function registerTaskTools(server: McpServer) {
       const db = getDb();
       const now = new Date().toISOString();
       const completedAt = status === 'completed' ? now : null;
-      db.query(`
+      await db.run(`
         UPDATE tasks SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?
-      `).run(status, completedAt, now, task_id);
-      const task = db.query('SELECT * FROM tasks WHERE id = ?').get(task_id);
+      `, status, completedAt, now, task_id);
+      const task = await db.get('SELECT * FROM tasks WHERE id = ?', task_id);
       if (!task) throw new Error(`Task not found: ${task_id}`);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_set_status', input_summary: JSON.stringify({ task_id, status }), success: true });
       notifyResourceChange();
@@ -178,21 +178,21 @@ export function registerTaskTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
-      const task = db.query('SELECT * FROM tasks WHERE id = ?').get(task_id) as any;
+      const task = await db.get('SELECT * FROM tasks WHERE id = ?', task_id) as any;
       if (!task) throw new Error(`Task not found: ${task_id}`);
 
       if (user_id) {
-        const member = db.query(`
+        const member = await db.get(`
           SELECT pm.user_id FROM project_members pm
           JOIN users u ON pm.user_id = u.id
           WHERE pm.project_id = ? AND pm.user_id = ? AND u.confirmed = 1 AND u.disabled = 0
-        `).get(task.project_id, user_id);
+        `, task.project_id, user_id);
         if (!member) throw new Error('Assignee must be a confirmed, active project member');
       }
 
       const now = new Date().toISOString();
-      db.query('UPDATE tasks SET assigned_to = ?, updated_at = ? WHERE id = ?').run(user_id, now, task_id);
-      const updated = db.query('SELECT * FROM tasks WHERE id = ?').get(task_id);
+      await db.run('UPDATE tasks SET assigned_to = ?, updated_at = ? WHERE id = ?', user_id, now, task_id);
+      const updated = await db.get('SELECT * FROM tasks WHERE id = ?', task_id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_assign', success: true });
       notifyResourceChange();
       const result = { task: updated };
@@ -210,7 +210,7 @@ export function registerTaskTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
-      db.query('DELETE FROM tasks WHERE id = ?').run(task_id);
+      await db.run('DELETE FROM tasks WHERE id = ?', task_id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_delete', success: true });
       notifyResourceChange();
       const result = { ok: true, deleted: task_id };
@@ -233,11 +233,11 @@ export function registerTaskTools(server: McpServer) {
       const db = getDb();
       const id = generateId();
       const now = new Date().toISOString();
-      db.query(`
+      await db.run(`
         INSERT INTO task_comments (id, task_id, content, created_by, created_at)
         VALUES (?, ?, ?, ?, ?)
-      `).run(id, task_id, content, agentLabel, now);
-      const comment = db.query('SELECT * FROM task_comments WHERE id = ?').get(id);
+      `, id, task_id, content, agentLabel, now);
+      const comment = await db.get('SELECT * FROM task_comments WHERE id = ?', id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_add_comment', success: true });
       notifyResourceChange();
       const result = { comment };
@@ -258,9 +258,9 @@ export function registerTaskTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
-      db.query('DELETE FROM task_dependencies WHERE task_id = ?').run(task_id);
+      await db.run('DELETE FROM task_dependencies WHERE task_id = ?', task_id);
       for (const blockedId of blocks_task_ids) {
-        db.query('INSERT OR IGNORE INTO task_dependencies (task_id, blocked_task_id) VALUES (?, ?)').run(task_id, blockedId);
+        await db.run('INSERT OR IGNORE INTO task_dependencies (task_id, blocked_task_id) VALUES (?, ?)', task_id, blockedId);
       }
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_set_dependencies', success: true });
       notifyResourceChange();

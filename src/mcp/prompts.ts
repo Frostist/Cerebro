@@ -16,9 +16,9 @@ export function registerPrompts(server: McpServer) {
       const conditions = user_id ? 'AND t.assigned_to = ?' : '';
       const params = user_id ? [user_id] : [];
 
-      const inProgress = db.query(`SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id WHERE t.status = 'in_progress' ${conditions} ORDER BY t.priority DESC, t.due_date ASC`).all(...params);
-      const overdue = db.query(`SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id WHERE t.due_date < ? AND t.status NOT IN ('completed','cancelled') ${conditions} ORDER BY t.due_date ASC`).all(now, ...params);
-      const dueSoon = db.query(`SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id WHERE t.due_date >= ? AND t.due_date <= ? AND t.status NOT IN ('completed','cancelled') ${conditions}`).all(now, in24h, ...params);
+      const inProgress = await db.all(`SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id WHERE t.status = 'in_progress' ${conditions} ORDER BY t.priority DESC, t.due_date ASC`, ...params);
+      const overdue = await db.all(`SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id WHERE t.due_date < ? AND t.status NOT IN ('completed','cancelled') ${conditions} ORDER BY t.due_date ASC`, now, ...params);
+      const dueSoon = await db.all(`SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id WHERE t.due_date >= ? AND t.due_date <= ? AND t.status NOT IN ('completed','cancelled') ${conditions}`, now, in24h, ...params);
 
       return {
         messages: [{
@@ -50,10 +50,10 @@ Please produce a standup in the format: what's in progress, what's blocked/overd
     { project_id: z.string() },
     async ({ project_id }) => {
       const db = getDb();
-      const project = db.query('SELECT * FROM projects WHERE id = ?').get(project_id) as any;
+      const project = await db.get('SELECT * FROM projects WHERE id = ?', project_id) as any;
       if (!project) throw new Error('Project not found');
-      const members = db.query(`SELECT pm.role, u.name, u.username FROM project_members pm JOIN users u ON pm.user_id = u.id WHERE pm.project_id = ?`).all(project_id);
-      const tasks = db.query('SELECT * FROM tasks WHERE project_id = ? ORDER BY priority DESC, status ASC').all(project_id);
+      const members = await db.all(`SELECT pm.role, u.name, u.username FROM project_members pm JOIN users u ON pm.user_id = u.id WHERE pm.project_id = ?`, project_id);
+      const tasks = await db.all('SELECT * FROM tasks WHERE project_id = ? ORDER BY priority DESC, status ASC', project_id);
 
       return {
         messages: [{
@@ -80,8 +80,8 @@ Include: project goal, team, task status breakdown, key blockers, and next recom
     { project_id: z.string() },
     async ({ project_id }) => {
       const db = getDb();
-      const unassigned = db.query(`SELECT * FROM tasks WHERE project_id = ? AND assigned_to IS NULL AND status NOT IN ('completed','cancelled')`).all(project_id);
-      const members = db.query(`SELECT pm.role, u.id, u.name, u.username FROM project_members pm JOIN users u ON pm.user_id = u.id WHERE pm.project_id = ? AND u.confirmed = 1 AND u.disabled = 0`).all(project_id);
+      const unassigned = await db.all(`SELECT * FROM tasks WHERE project_id = ? AND assigned_to IS NULL AND status NOT IN ('completed','cancelled')`, project_id);
+      const members = await db.all(`SELECT pm.role, u.id, u.name, u.username FROM project_members pm JOIN users u ON pm.user_id = u.id WHERE pm.project_id = ? AND u.confirmed = 1 AND u.disabled = 0`, project_id);
 
       return {
         messages: [{

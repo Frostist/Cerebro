@@ -7,13 +7,13 @@ export async function adminAuth(c: Context<any>, next: Next) {
   if (!sessionId) return c.redirect('/admin/login');
 
   const db = getDb();
-  const session = db.query(`
+  const session = await db.get(`
     SELECT s.*, u.id as u_id, u.name, u.email, u.username, u.password_hash, u.role,
            u.confirmed, u.disabled, u.created_by, u.created_at, u.updated_at
     FROM admin_sessions s
     JOIN users u ON s.user_id = u.id
     WHERE s.id = ? AND s.expires_at > ?
-  `).get(sessionId, new Date().toISOString()) as any;
+  `, sessionId, new Date().toISOString()) as any;
 
   if (!session || session.disabled) return c.redirect('/admin/login');
 

@@ -54,14 +54,15 @@ async function setFlashPassword(c: any, password: string) {
 
 // ─── Login / Logout ─────────────────────────────────────────────────────────
 
-adminRouter.get('/admin/login', (c) => {
+adminRouter.get('/admin/login', async (c) => {
   const isProd = process.env.NODE_ENV === 'production';
   let devHint = null;
   if (!isProd) {
     const db = getDb();
-    const superadmin = db.query(
-      'SELECT username FROM users WHERE email = ? AND disabled = 0'
-    ).get(process.env.SUPERADMIN_EMAIL ?? '') as any;
+    const superadmin = await db.get(
+      'SELECT username FROM users WHERE email = ? AND disabled = 0',
+      process.env.SUPERADMIN_EMAIL ?? ''
+    ) as any;
     if (superadmin) {
       devHint = { username: superadmin.username, password: process.env.SUPERADMIN_INITIAL_PASSWORD ?? '' };
     }
@@ -73,7 +74,7 @@ adminRouter.post('/admin/login', async (c) => {
   const body = await c.req.parseBody();
   const { username, password } = body as Record<string, string>;
   const db = getDb();
-  const user = db.query('SELECT * FROM users WHERE username = ? AND disabled = 0 AND confirmed = 1').get(username) as any;
+  const user = await db.get('SELECT * FROM users WHERE username = ? AND disabled = 0 AND confirmed = 1', username) as any;
 
   if (!user || !(await Bun.password.verify(password, user.password_hash))) {
     return c.html(<LoginPage error="Invalid username or password." />, 401);
@@ -82,17 +83,17 @@ adminRouter.post('/admin/login', async (c) => {
   const sessionId = generateId();
   const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
   const now = new Date().toISOString();
-  db.query('INSERT INTO admin_sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)').run(sessionId, user.id, expiresAt, now);
+  await db.run('INSERT INTO admin_sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)', sessionId, user.id, expiresAt, now);
 
   const secure = (process.env.BASE_URL ?? '').startsWith('https');
   setCookie(c, 'session', sessionId, { httpOnly: true, secure, sameSite: 'Strict', maxAge: 8 * 3600, path: '/' });
   return c.redirect('/admin');
 });
 
-adminRouter.post('/admin/logout', (c) => {
+adminRouter.post('/admin/logout', async (c) => {
   const sessionId = getCookie(c, 'session');
   if (sessionId) {
-    getDb().query('DELETE FROM admin_sessions WHERE id = ?').run(sessionId);
+    await getDb().run('DELETE FROM admin_sessions WHERE id = ?', sessionId);
   }
   deleteCookie(c, 'session');
   return c.redirect('/admin/login');
@@ -103,7 +104,7 @@ adminRouter.post('/admin/logout', (c) => {
 adminRouter.use('/admin/*', adminAuth);
 
 // Dashboard
-adminRouter.get('/admin', (c) => {
+adminRouter.get('/admin', async (c) => {
   const user = c.get('user') as any;
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   const flash = getFlash(c);
@@ -112,30 +113,30 @@ adminRouter.get('/admin', (c) => {
   const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
   const stats = {
-    totalUsers: (db.query("SELECT COUNT(*) as n FROM users WHERE confirmed=1 AND disabled=0").get() as any).n,
-    totalProjects: (db.query("SELECT COUNT(*) as n FROM projects").get() as any).n,
-    totalTasks: (db.query("SELECT COUNT(*) as n FROM tasks").get() as any).n,
-    pendingTasks: (db.query("SELECT COUNT(*) as n FROM tasks WHERE status='pending'").get() as any).n,
-    inProgressTasks: (db.query("SELECT COUNT(*) as n FROM tasks WHERE status='in_progress'").get() as any).n,
-    overdueTasks: (db.query("SELECT COUNT(*) as n FROM tasks WHERE due_date < ? AND status NOT IN ('completed','cancelled')").get(now) as any).n,
-    dueSoonTasks: (db.query("SELECT COUNT(*) as n FROM tasks WHERE due_date >= ? AND due_date <= ? AND status NOT IN ('completed','cancelled')").get(now, in24h) as any).n,
+    totalUsers: ((await db.get("SELECT COUNT(*) as n FROM users WHERE confirmed=1 AND disabled=0")) as any).n,
+    totalProjects: ((await db.get("SELECT COUNT(*) as n FROM projects")) as any).n,
+    totalTasks: ((await db.get("SELECT COUNT(*) as n FROM tasks")) as any).n,
+    pendingTasks: ((await db.get("SELECT COUNT(*) as n FROM tasks WHERE status='pending'")) as any).n,
+    inProgressTasks: ((await db.get("SELECT COUNT(*) as n FROM tasks WHERE status='in_progress'")) as any).n,
+    overdueTasks: ((await db.get("SELECT COUNT(*) as n FROM tasks WHERE due_date < ? AND status NOT IN ('completed','cancelled')", now)) as any).n,
+    dueSoonTasks: ((await db.get("SELECT COUNT(*) as n FROM tasks WHERE due_date >= ? AND due_date <= ? AND status NOT IN ('completed','cancelled')", now, in24h)) as any).n,
   };
-  const recentActivity = db.query('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 10').all();
+  const recentActivity = await db.all('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 10');
 
   return c.html(<DashboardPage user={user} isSuperadmin={isSuperadmin} flash={flash} stats={stats} recentActivity={recentActivity} />);
 });
 
 // ─── Users ───────────────────────────────────────────────────────────────────
 
-adminRouter.get('/admin/users', (c) => {
+adminRouter.get('/admin/users', async (c) => {
   const user = c.get('user') as any;
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   const flash = getFlash(c);
   const q = c.req.query('q') ?? '';
   const db = getDb();
   const users = q
-    ? db.query("SELECT * FROM users WHERE username LIKE ? OR name LIKE ? ORDER BY created_at DESC").all(`%${q}%`, `%${q}%`)
-    : db.query("SELECT * FROM users ORDER BY created_at DESC").all();
+    ? await db.all("SELECT * FROM users WHERE username LIKE ? OR name LIKE ? ORDER BY created_at DESC", `%${q}%`, `%${q}%`)
+    : await db.all("SELECT * FROM users ORDER BY created_at DESC");
   return c.html(<UsersListPage user={user} isSuperadmin={isSuperadmin} flash={flash} users={users} filter={q} />);
 });
 
@@ -164,30 +165,30 @@ adminRouter.post('/admin/users', async (c) => {
   const viewToken = generateViewToken();
   const viewTokenExpiry = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
-  db.query(`
+  await db.run(`
     INSERT INTO users (id, name, email, username, password_hash, role, confirmed, disabled, created_by, credential_view_token, credential_view_token_expires_at, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, 'member', 1, 0, ?, ?, ?, ?, ?)
-  `).run(id, name.trim(), email?.trim() || null, username, hash, user.id, viewToken, viewTokenExpiry, now, now);
+  `, id, name.trim(), email?.trim() || null, username, hash, user.id, viewToken, viewTokenExpiry, now, now);
 
   await setFlashPassword(c, password);
   logActivity({ user_id: user.id, agent_label: null, tool_name: 'admin:create_user', success: true, input_summary: `name=${name}` });
   return c.redirect(`/admin/users/${id}/credentials?token=${viewToken}`);
 });
 
-adminRouter.get('/admin/users/:id', (c) => {
+adminRouter.get('/admin/users/:id', async (c) => {
   const user = c.get('user') as any;
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   const flash = getFlash(c);
   const db = getDb();
-  const subject = db.query('SELECT * FROM users WHERE id = ?').get(c.req.param('id'));
+  const subject = await db.get('SELECT * FROM users WHERE id = ?', c.req.param('id'));
   if (!subject) return c.text('Not found', 404);
-  const token = db.query('SELECT * FROM oauth_tokens WHERE user_id = ?').get((subject as any).id);
+  const token = await db.get('SELECT * FROM oauth_tokens WHERE user_id = ?', (subject as any).id);
   return c.html(<UserDetailPage user={user} isSuperadmin={isSuperadmin} flash={flash} subject={subject} token={token} />);
 });
 
 adminRouter.get('/admin/users/:id/credentials', async (c) => {
   const db = getDb();
-  const subject = db.query('SELECT * FROM users WHERE id = ?').get(c.req.param('id')) as any;
+  const subject = await db.get('SELECT * FROM users WHERE id = ?', c.req.param('id')) as any;
   if (!subject) return c.text('Not found', 404);
 
   const token = c.req.query('token');
@@ -197,7 +198,7 @@ adminRouter.get('/admin/users/:id/credentials', async (c) => {
   }
 
   // Mark token used
-  db.query('UPDATE users SET credential_view_token = NULL, credential_view_token_expires_at = NULL WHERE id = ?').run(subject.id);
+  await db.run('UPDATE users SET credential_view_token = NULL, credential_view_token_expires_at = NULL WHERE id = ?', subject.id);
 
   const password = await getFlashPassword(c);
   if (!password) {
@@ -211,54 +212,54 @@ adminRouter.get('/admin/users/:id/credentials', async (c) => {
 });
 
 // User action routes
-adminRouter.post('/admin/users/:id/confirm', (c) => {
+adminRouter.post('/admin/users/:id/confirm', async (c) => {
   const db = getDb();
-  db.query('UPDATE users SET confirmed = 1, updated_at = ? WHERE id = ?').run(new Date().toISOString(), c.req.param('id'));
+  await db.run('UPDATE users SET confirmed = 1, updated_at = ? WHERE id = ?', new Date().toISOString(), c.req.param('id'));
   setFlash(c, 'success', 'User confirmed.');
   return c.redirect(`/admin/users/${c.req.param('id')}`);
 });
 
-adminRouter.post('/admin/users/:id/disable', (c) => {
+adminRouter.post('/admin/users/:id/disable', async (c) => {
   const user = c.get('user') as any;
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   const db = getDb();
-  const subject = db.query('SELECT * FROM users WHERE id = ?').get(c.req.param('id')) as any;
+  const subject = await db.get('SELECT * FROM users WHERE id = ?', c.req.param('id')) as any;
   if (!subject) return c.text('Not found', 404);
   if (subject.email === process.env.SUPERADMIN_EMAIL) {
     setFlash(c, 'error', 'Cannot disable superadmin.');
     return c.redirect(`/admin/users/${c.req.param('id')}`);
   }
-  db.query('UPDATE users SET disabled = 1, updated_at = ? WHERE id = ?').run(new Date().toISOString(), c.req.param('id'));
+  await db.run('UPDATE users SET disabled = 1, updated_at = ? WHERE id = ?', new Date().toISOString(), c.req.param('id'));
   // Revoke token too
-  db.query('DELETE FROM oauth_tokens WHERE user_id = ?').run(c.req.param('id'));
+  await db.run('DELETE FROM oauth_tokens WHERE user_id = ?', c.req.param('id'));
   setFlash(c, 'success', 'User disabled.');
   return c.redirect(`/admin/users/${c.req.param('id')}`);
 });
 
-adminRouter.post('/admin/users/:id/enable', (c) => {
+adminRouter.post('/admin/users/:id/enable', async (c) => {
   const db = getDb();
-  db.query('UPDATE users SET disabled = 0, updated_at = ? WHERE id = ?').run(new Date().toISOString(), c.req.param('id'));
+  await db.run('UPDATE users SET disabled = 0, updated_at = ? WHERE id = ?', new Date().toISOString(), c.req.param('id'));
   setFlash(c, 'success', 'User enabled.');
   return c.redirect(`/admin/users/${c.req.param('id')}`);
 });
 
-adminRouter.post('/admin/users/:id/promote', (c) => {
+adminRouter.post('/admin/users/:id/promote', async (c) => {
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   if (!isSuperadmin) return c.text('Forbidden', 403);
-  getDb().query("UPDATE users SET role = 'admin', updated_at = ? WHERE id = ?").run(new Date().toISOString(), c.req.param('id'));
+  await getDb().run("UPDATE users SET role = 'admin', updated_at = ? WHERE id = ?", new Date().toISOString(), c.req.param('id'));
   setFlash(c, 'success', 'User promoted to admin.');
   return c.redirect(`/admin/users/${c.req.param('id')}`);
 });
 
-adminRouter.post('/admin/users/:id/demote', (c) => {
+adminRouter.post('/admin/users/:id/demote', async (c) => {
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   if (!isSuperadmin) return c.text('Forbidden', 403);
-  const subject = getDb().query('SELECT * FROM users WHERE id = ?').get(c.req.param('id')) as any;
+  const subject = await getDb().get('SELECT * FROM users WHERE id = ?', c.req.param('id')) as any;
   if (subject?.email === process.env.SUPERADMIN_EMAIL) {
     setFlash(c, 'error', 'Cannot demote superadmin.');
     return c.redirect(`/admin/users/${c.req.param('id')}`);
   }
-  getDb().query("UPDATE users SET role = 'member', updated_at = ? WHERE id = ?").run(new Date().toISOString(), c.req.param('id'));
+  await getDb().run("UPDATE users SET role = 'member', updated_at = ? WHERE id = ?", new Date().toISOString(), c.req.param('id'));
   setFlash(c, 'success', 'User demoted to member.');
   return c.redirect(`/admin/users/${c.req.param('id')}`);
 });
@@ -268,7 +269,7 @@ adminRouter.post('/admin/users/:id/regenerate-creds', async (c) => {
   if (!isSuperadmin) return c.text('Forbidden', 403);
 
   const db = getDb();
-  const subject = db.query('SELECT * FROM users WHERE id = ?').get(c.req.param('id')) as any;
+  const subject = await db.get('SELECT * FROM users WHERE id = ?', c.req.param('id')) as any;
   if (!subject) return c.text('Not found', 404);
 
   const username = await uniqueUsername(db);
@@ -278,89 +279,89 @@ adminRouter.post('/admin/users/:id/regenerate-creds', async (c) => {
   const viewTokenExpiry = new Date(Date.now() + 5 * 60 * 1000).toISOString();
   const now = new Date().toISOString();
 
-  db.query('DELETE FROM oauth_tokens WHERE user_id = ?').run(subject.id);
-  db.query(`
+  await db.run('DELETE FROM oauth_tokens WHERE user_id = ?', subject.id);
+  await db.run(`
     UPDATE users SET username = ?, password_hash = ?, credential_view_token = ?, credential_view_token_expires_at = ?, updated_at = ?
     WHERE id = ?
-  `).run(username, hash, viewToken, viewTokenExpiry, now, subject.id);
+  `, username, hash, viewToken, viewTokenExpiry, now, subject.id);
 
   await setFlashPassword(c, password);
   return c.redirect(`/admin/users/${subject.id}/credentials?token=${viewToken}`);
 });
 
-adminRouter.post('/admin/users/:id/revoke-token', (c) => {
-  getDb().query('DELETE FROM oauth_tokens WHERE user_id = ?').run(c.req.param('id'));
+adminRouter.post('/admin/users/:id/revoke-token', async (c) => {
+  await getDb().run('DELETE FROM oauth_tokens WHERE user_id = ?', c.req.param('id'));
   setFlash(c, 'success', 'Token revoked.');
   return c.redirect(`/admin/users/${c.req.param('id')}`);
 });
 
 // ─── Projects ────────────────────────────────────────────────────────────────
 
-adminRouter.get('/admin/projects', (c) => {
+adminRouter.get('/admin/projects', async (c) => {
   const user = c.get('user') as any;
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   const flash = getFlash(c);
-  const projects = getDb().query('SELECT * FROM projects ORDER BY created_at DESC').all();
+  const projects = await getDb().all('SELECT * FROM projects ORDER BY created_at DESC');
   return c.html(<ProjectsListPage user={user} isSuperadmin={isSuperadmin} flash={flash} projects={projects} />);
 });
 
-adminRouter.get('/admin/projects/:id', (c) => {
+adminRouter.get('/admin/projects/:id', async (c) => {
   const user = c.get('user') as any;
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   const flash = getFlash(c);
   const db = getDb();
-  const project = db.query('SELECT * FROM projects WHERE id = ?').get(c.req.param('id'));
+  const project = await db.get('SELECT * FROM projects WHERE id = ?', c.req.param('id'));
   if (!project) return c.text('Not found', 404);
-  const members = db.query(`
+  const members = await db.all(`
     SELECT pm.role, pm.assigned_at, u.id, u.name, u.username
     FROM project_members pm JOIN users u ON pm.user_id = u.id
     WHERE pm.project_id = ?
-  `).all(c.req.param('id'));
-  const tasks = db.query(`
+  `, c.req.param('id'));
+  const tasks = await db.all(`
     SELECT t.*, u.name as assignee_name FROM tasks t
     LEFT JOIN users u ON t.assigned_to = u.id
     WHERE t.project_id = ? ORDER BY t.created_at DESC
-  `).all(c.req.param('id'));
+  `, c.req.param('id'));
   return c.html(<ProjectDetailPage user={user} isSuperadmin={isSuperadmin} flash={flash} project={project} members={members} tasks={tasks} />);
 });
 
-adminRouter.post('/admin/projects/:id/delete', (c) => {
-  getDb().query('DELETE FROM projects WHERE id = ?').run(c.req.param('id'));
+adminRouter.post('/admin/projects/:id/delete', async (c) => {
+  await getDb().run('DELETE FROM projects WHERE id = ?', c.req.param('id'));
   setFlash(c, 'success', 'Project deleted.');
   return c.redirect('/admin/projects');
 });
 
 // ─── Activity ────────────────────────────────────────────────────────────────
 
-adminRouter.get('/admin/activity', (c) => {
+adminRouter.get('/admin/activity', async (c) => {
   const user = c.get('user') as any;
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   const flash = getFlash(c);
   const filterUserId = c.req.query('user_id');
   const db = getDb();
   const logs = filterUserId
-    ? db.query('SELECT * FROM activity_log WHERE user_id = ? ORDER BY created_at DESC LIMIT 500').all(filterUserId)
-    : db.query('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 500').all();
-  const users = db.query('SELECT id, username, name FROM users ORDER BY username ASC').all();
+    ? await db.all('SELECT * FROM activity_log WHERE user_id = ? ORDER BY created_at DESC LIMIT 500', filterUserId)
+    : await db.all('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 500');
+  const users = await db.all('SELECT id, username, name FROM users ORDER BY username ASC');
   return c.html(<ActivityPage user={user} isSuperadmin={isSuperadmin} flash={flash} logs={logs} users={users} filterUserId={filterUserId} />);
 });
 
 // ─── Settings (superadmin only) ──────────────────────────────────────────────
 
-adminRouter.get('/admin/settings', (c) => {
+adminRouter.get('/admin/settings', async (c) => {
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   if (!isSuperadmin) return c.text('Forbidden', 403);
   const user = c.get('user') as any;
   const flash = getFlash(c);
   const db = getDb();
-  const tokenCount = (db.query('SELECT COUNT(*) as n FROM oauth_tokens').get() as any).n;
+  const tokenCount = ((await db.get('SELECT COUNT(*) as n FROM oauth_tokens')) as any).n;
   return c.html(<SettingsPage user={user} isSuperadmin={isSuperadmin} flash={flash} tokenCount={tokenCount} />);
 });
 
-adminRouter.post('/admin/settings/revoke-all-tokens', (c) => {
+adminRouter.post('/admin/settings/revoke-all-tokens', async (c) => {
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   if (!isSuperadmin) return c.text('Forbidden', 403);
-  getDb().query('DELETE FROM oauth_tokens').run();
+  await getDb().run('DELETE FROM oauth_tokens');
   setFlash(c, 'success', 'All tokens revoked.');
   return c.redirect('/admin/settings');
 });
