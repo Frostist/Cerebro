@@ -36,6 +36,10 @@ export function registerTaskTools(server: McpServer) {
       const createdByLabel = user?.name ?? agentLabel;
       const db = getDb();
 
+      // Caller must be a member of this project
+      const membership = await db.get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', project_id, user?.id ?? '');
+      if (!membership) throw new Error(`Project not found: ${project_id}`);
+
       // Validate assignee is a confirmed, non-disabled project member
       if (assigned_to) {
         const member = await db.get(`
@@ -78,7 +82,18 @@ export function registerTaskTools(server: McpServer) {
 
       const conditions: string[] = [];
       const params: any[] = [];
-      if (project_id) { conditions.push('t.project_id = ?'); params.push(project_id); }
+
+      // Restrict to projects the caller is a member of
+      conditions.push('EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = t.project_id AND pm.user_id = ?)');
+      params.push(user?.id ?? '');
+
+      if (project_id) {
+        // Also verify the caller is a member of the specific project requested
+        const membership = await db.get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', project_id, user?.id ?? '');
+        if (!membership) throw new Error(`Project not found: ${project_id}`);
+        conditions.push('t.project_id = ?');
+        params.push(project_id);
+      }
       if (status) { conditions.push('t.status = ?'); params.push(status); }
       if (assigned_to) { conditions.push('t.assigned_to = ?'); params.push(assigned_to); }
 
@@ -100,8 +115,14 @@ export function registerTaskTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
-      const task = await db.get(`${ENRICHED_TASK_SQL} WHERE t.id = ?`, task_id);
+
+      const task = await db.get(`${ENRICHED_TASK_SQL} WHERE t.id = ?`, task_id) as any;
       if (!task) throw new Error(`Task not found: ${task_id}`);
+
+      // Caller must be a member of the task's project
+      const membership = await db.get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', task.project_id, user?.id ?? '');
+      if (!membership) throw new Error(`Task not found: ${task_id}`);
+
       const comments = await db.all('SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC', task_id);
       const blocks = await db.all(
         `SELECT td.blocked_task_id AS id, t.title FROM task_dependencies td JOIN tasks t ON td.blocked_task_id = t.id WHERE td.task_id = ?`,
@@ -133,8 +154,14 @@ export function registerTaskTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
+
       const task = await db.get('SELECT * FROM tasks WHERE id = ?', task_id) as any;
       if (!task) throw new Error(`Task not found: ${task_id}`);
+
+      // Caller must be a member of the task's project
+      const membership = await db.get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', task.project_id, user?.id ?? '');
+      if (!membership) throw new Error(`Task not found: ${task_id}`);
+
       const now = new Date().toISOString();
       await db.run(`
         UPDATE tasks SET
@@ -170,6 +197,14 @@ export function registerTaskTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
+
+      const taskRow = await db.get('SELECT project_id FROM tasks WHERE id = ?', task_id) as any;
+      if (!taskRow) throw new Error(`Task not found: ${task_id}`);
+
+      // Caller must be a member of the task's project
+      const membership = await db.get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', taskRow.project_id, user?.id ?? '');
+      if (!membership) throw new Error(`Task not found: ${task_id}`);
+
       const now = new Date().toISOString();
       const completedAt = status === 'completed' ? now : null;
       await db.run(`
@@ -203,8 +238,14 @@ export function registerTaskTools(server: McpServer) {
       const missing = task_ids.filter(id => !tasks.find((t: any) => t.id === id));
       if (missing.length) throw new Error(`Tasks not found: ${missing.join(', ')}`);
 
+      // Caller must be a member of all projects involved
+      const projectIds = [...new Set(tasks.map((t: any) => t.project_id))];
+      for (const project_id of projectIds) {
+        const membership = await db.get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', project_id, user?.id ?? '');
+        if (!membership) throw new Error(`Task not found: ${task_ids.join(', ')}`);
+      }
+
       if (user_id) {
-        const projectIds = [...new Set(tasks.map((t: any) => t.project_id))];
         for (const project_id of projectIds) {
           const member = await db.get(`
             SELECT pm.user_id FROM project_members pm
@@ -241,6 +282,14 @@ export function registerTaskTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
+
+      const taskRow = await db.get('SELECT project_id FROM tasks WHERE id = ?', task_id) as any;
+      if (!taskRow) throw new Error(`Task not found: ${task_id}`);
+
+      // Caller must be a member of the task's project
+      const membership = await db.get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', taskRow.project_id, user?.id ?? '');
+      if (!membership) throw new Error(`Task not found: ${task_id}`);
+
       await db.run('DELETE FROM tasks WHERE id = ?', task_id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_delete', success: true });
       notifyResourceChange();
@@ -263,6 +312,14 @@ export function registerTaskTools(server: McpServer) {
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const createdByLabel = user?.name ?? agentLabel;
       const db = getDb();
+
+      const taskRow = await db.get('SELECT project_id FROM tasks WHERE id = ?', task_id) as any;
+      if (!taskRow) throw new Error(`Task not found: ${task_id}`);
+
+      // Caller must be a member of the task's project
+      const membership = await db.get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', taskRow.project_id, user?.id ?? '');
+      if (!membership) throw new Error(`Task not found: ${task_id}`);
+
       const id = generateId();
       const now = new Date().toISOString();
       await db.run(`
@@ -290,6 +347,14 @@ export function registerTaskTools(server: McpServer) {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
+
+      const taskRow = await db.get('SELECT project_id FROM tasks WHERE id = ?', task_id) as any;
+      if (!taskRow) throw new Error(`Task not found: ${task_id}`);
+
+      // Caller must be a member of the task's project
+      const membership = await db.get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', taskRow.project_id, user?.id ?? '');
+      if (!membership) throw new Error(`Task not found: ${task_id}`);
+
       await db.run('DELETE FROM task_dependencies WHERE task_id = ?', task_id);
       for (const blockedId of blocks_task_ids) {
         await db.run('INSERT INTO task_dependencies (task_id, blocked_task_id) VALUES (?, ?) ON CONFLICT DO NOTHING', task_id, blockedId);

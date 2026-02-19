@@ -8,17 +8,33 @@ export function registerPrompts(server: McpServer) {
     'daily_standup',
     'Generate a daily standup summary of tasks and projects',
     { user_id: z.string().optional() },
-    async ({ user_id }) => {
+    async ({ user_id }, extra) => {
+      const caller = (extra.authInfo?.extra as any)?.user;
+      const callerId = caller?.id ?? '';
       const db = getDb();
       const now = new Date().toISOString();
       const in24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-      const conditions = user_id ? 'AND t.assigned_to = ?' : '';
-      const params = user_id ? [user_id] : [];
+      // Scope tasks to projects the caller is a member of
+      const memberFilter = 'EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = t.project_id AND pm.user_id = ?)';
+      const conditions = user_id ? `AND t.assigned_to = ?` : '';
 
-      const inProgress = await db.all(`SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id WHERE t.status = 'in_progress' ${conditions} ORDER BY t.priority DESC, t.due_date ASC`, ...params);
-      const overdue = await db.all(`SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id WHERE t.due_date < ? AND t.status NOT IN ('completed','cancelled') ${conditions} ORDER BY t.due_date ASC`, now, ...params);
-      const dueSoon = await db.all(`SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id WHERE t.due_date >= ? AND t.due_date <= ? AND t.status NOT IN ('completed','cancelled') ${conditions}`, now, in24h, ...params);
+      const inProgressParams = user_id ? [callerId, user_id] : [callerId];
+      const overdueParams = user_id ? [now, callerId, user_id] : [now, callerId];
+      const dueSoonParams = user_id ? [now, in24h, callerId, user_id] : [now, in24h, callerId];
+
+      const inProgress = await db.all(
+        `SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id WHERE t.status = 'in_progress' AND ${memberFilter} ${conditions} ORDER BY t.priority DESC, t.due_date ASC`,
+        ...inProgressParams
+      );
+      const overdue = await db.all(
+        `SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id WHERE t.due_date < ? AND t.status NOT IN ('completed','cancelled') AND ${memberFilter} ${conditions} ORDER BY t.due_date ASC`,
+        ...overdueParams
+      );
+      const dueSoon = await db.all(
+        `SELECT t.*, u.name as assignee_name FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id WHERE t.due_date >= ? AND t.due_date <= ? AND t.status NOT IN ('completed','cancelled') AND ${memberFilter} ${conditions}`,
+        ...dueSoonParams
+      );
 
       return {
         messages: [{
@@ -48,8 +64,15 @@ Please produce a standup in the format: what's in progress, what's blocked/overd
     'project_brief',
     'Generate a structured project brief for a given project',
     { project_id: z.string() },
-    async ({ project_id }) => {
+    async ({ project_id }, extra) => {
+      const caller = (extra.authInfo?.extra as any)?.user;
+      const callerId = caller?.id ?? '';
       const db = getDb();
+
+      // Verify caller is a member of this project
+      const membership = await db.get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', project_id, callerId);
+      if (!membership) throw new Error('Project not found');
+
       const project = await db.get('SELECT * FROM projects WHERE id = ?', project_id) as any;
       if (!project) throw new Error('Project not found');
       const members = await db.all(`SELECT pm.role, u.name, u.username FROM project_members pm JOIN users u ON pm.user_id = u.id WHERE pm.project_id = ?`, project_id);
@@ -78,8 +101,15 @@ Include: project goal, team, task status breakdown, key blockers, and next recom
     'assign_unassigned_tasks',
     'Suggest assignments for unassigned tasks based on team members',
     { project_id: z.string() },
-    async ({ project_id }) => {
+    async ({ project_id }, extra) => {
+      const caller = (extra.authInfo?.extra as any)?.user;
+      const callerId = caller?.id ?? '';
       const db = getDb();
+
+      // Verify caller is a member of this project
+      const membership = await db.get('SELECT role FROM project_members WHERE project_id = ? AND user_id = ?', project_id, callerId);
+      if (!membership) throw new Error('Project not found');
+
       const unassigned = await db.all(`SELECT * FROM tasks WHERE project_id = ? AND assigned_to IS NULL AND status NOT IN ('completed','cancelled')`, project_id);
       const members = await db.all(`SELECT pm.role, u.id, u.name, u.username FROM project_members pm JOIN users u ON pm.user_id = u.id WHERE pm.project_id = ? AND u.confirmed = 1 AND u.disabled = 0`, project_id);
 
