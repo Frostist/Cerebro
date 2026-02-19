@@ -153,6 +153,8 @@ async function seedSuperadmin(db: Database): Promise<void> {
   `).run(id, email, username, hash, now, now);
 
   console.log('⚠️  Superadmin created — change your password immediately.');
+  console.log(`👤  Superadmin username: ${username}`);
+  console.log(`🔑  Superadmin password: ${initialPassword}`);
 }
 
 export async function uniqueUsername(db: Database): Promise<string> {

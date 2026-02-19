@@ -1,7 +1,0 @@
-PORT=3000
-DATABASE_PATH=./taskmanager.db
-BASE_URL=https://your-domain.com
-SUPERADMIN_EMAIL=superadmin@example.com
-SUPERADMIN_INITIAL_PASSWORD=changeme123
-SESSION_SECRET=replace-with-64-char-random-hex-string-here-000000000000000000000000
-FLASH_SECRET=replace-with-64-char-random-hex-string-here-111111111111111111111111

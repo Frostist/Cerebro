@@ -55,7 +55,18 @@ async function setFlashPassword(c: any, password: string) {
 // ─── Login / Logout ─────────────────────────────────────────────────────────
 
 adminRouter.get('/admin/login', (c) => {
-  return c.html(<LoginPage />);
+  const isProd = process.env.NODE_ENV === 'production';
+  let devHint = null;
+  if (!isProd) {
+    const db = getDb();
+    const superadmin = db.query(
+      'SELECT username FROM users WHERE email = ? AND disabled = 0'
+    ).get(process.env.SUPERADMIN_EMAIL ?? '') as any;
+    if (superadmin) {
+      devHint = { username: superadmin.username, password: process.env.SUPERADMIN_INITIAL_PASSWORD ?? '' };
+    }
+  }
+  return c.html(<LoginPage devHint={devHint} />);
 });
 
 adminRouter.post('/admin/login', async (c) => {

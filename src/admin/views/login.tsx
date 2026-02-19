@@ -3,9 +3,10 @@ import type { FC } from 'hono/jsx';
 
 interface LoginProps {
   error?: string;
+  devHint?: { username: string; password: string } | null;
 }
 
-export const LoginPage: FC<LoginProps> = ({ error }) => {
+export const LoginPage: FC<LoginProps> = ({ error, devHint }) => {
   return (
     <html lang="en">
       <head>
@@ -19,6 +20,13 @@ export const LoginPage: FC<LoginProps> = ({ error }) => {
           <h1 class="login-title">Cerebro</h1>
           <p class="login-sub">Admin Portal</p>
           {error && <div class="alert alert-error">{error}</div>}
+          {devHint && (
+            <div class="alert alert-success" style="font-family:monospace;font-size:0.8rem">
+              <strong>Dev credentials</strong><br />
+              Username: {devHint.username}<br />
+              Password: {devHint.password}
+            </div>
+          )}
           <form method="post" action="/admin/login">
             <div class="form-group">
               <label for="username">Username</label>
