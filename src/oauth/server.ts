@@ -6,6 +6,16 @@ import { verifyCodeChallenge } from './pkce.ts';
 // In-memory rate limiter: 10 req/min per IP
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
+// Validate that the client credentials match MCP_CLIENT_ID / MCP_CLIENT_SECRET env vars.
+// Returns true if credentials are valid (or if env vars are not configured).
+function validateClientCredentials(clientId?: string, clientSecret?: string): boolean {
+  const expectedId = process.env.MCP_CLIENT_ID;
+  const expectedSecret = process.env.MCP_CLIENT_SECRET;
+  // If env vars aren't set, skip the check so the server still works without them.
+  if (!expectedId || !expectedSecret) return true;
+  return clientId === expectedId && clientSecret === expectedSecret;
+}
+
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
   const entry = rateLimitMap.get(ip);
@@ -59,6 +69,12 @@ oauthRouter.get('/.well-known/oauth-authorization-server', (c) => {
 oauthRouter.post('/oauth/register', async (c) => {
   console.log('[oauth] POST /oauth/register — dynamic client registration');
   const body = await c.req.json().catch(() => ({})) as Record<string, any>;
+
+  // Enforce client credentials if configured
+  if (!validateClientCredentials(body.client_id, body.client_secret)) {
+    console.log('[oauth] register rejected — invalid client credentials');
+    return c.json({ error: 'invalid_client', error_description: 'Invalid client_id or client_secret' }, 401);
+  }
 
   const requestedUris: string[] = Array.isArray(body.redirect_uris) ? body.redirect_uris : [];
   const invalidUris = requestedUris.filter((uri) => !isAllowedRedirectUri(uri));
@@ -252,6 +268,12 @@ oauthRouter.post('/oauth/token', async (c) => {
   const body = await c.req.parseBody();
   const grantType = body['grant_type'] as string;
   console.log(`[oauth] POST /oauth/token grant_type=${grantType} from ${ip}`);
+
+  // Enforce client credentials if configured
+  if (!validateClientCredentials(body['client_id'] as string, body['client_secret'] as string)) {
+    console.log('[oauth] token rejected — invalid client credentials');
+    return c.json({ error: 'invalid_client', error_description: 'Invalid client_id or client_secret' }, 401);
+  }
 
   if (grantType === 'authorization_code') {
     return handleAuthCode(c, body as Record<string, string>);
