@@ -35,11 +35,31 @@ oauthRouter.get('/.well-known/oauth-authorization-server', (c) => {
     issuer: base,
     authorization_endpoint: `${base}/oauth/authorize`,
     token_endpoint: `${base}/oauth/token`,
+    registration_endpoint: `${base}/oauth/register`,
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],
     token_endpoint_auth_methods_supported: ['none'],
+    scopes_supported: ['read', 'write'],
   });
+});
+
+// Dynamic Client Registration (RFC 7591)
+// Claude requires this endpoint — we accept any client and echo back a client_id
+oauthRouter.post('/oauth/register', async (c) => {
+  console.log('[oauth] POST /oauth/register — dynamic client registration');
+  const body = await c.req.json().catch(() => ({})) as Record<string, any>;
+  const clientId = `claude-${generateId()}`;
+  return c.json({
+    client_id: clientId,
+    client_secret_expires_at: 0,
+    redirect_uris: body.redirect_uris ?? [],
+    grant_types: ['authorization_code', 'refresh_token'],
+    response_types: ['code'],
+    token_endpoint_auth_method: 'none',
+    ...body,
+    client_id: clientId,
+  }, 201);
 });
 
 // Protected Resource Metadata (RFC 9728)
