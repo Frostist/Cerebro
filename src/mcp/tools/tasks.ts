@@ -21,6 +21,7 @@ export function registerTaskTools(server: McpServer) {
     async ({ project_id, title, description, priority, assigned_to, due_date }, extra) => {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
+      const createdByLabel = user?.name ?? agentLabel;
       const db = getDb();
 
       // Validate assignee is a confirmed, non-disabled project member
@@ -38,7 +39,7 @@ export function registerTaskTools(server: McpServer) {
       await db.run(`
         INSERT INTO tasks (id, project_id, title, description, status, priority, assigned_to, created_by, due_date, created_at, updated_at)
         VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
-      `, id, project_id, title, description ?? null, priority, assigned_to ?? null, agentLabel, due_date ?? null, now, now);
+      `, id, project_id, title, description ?? null, priority, assigned_to ?? null, createdByLabel, due_date ?? null, now, now);
 
       const task = await db.get('SELECT * FROM tasks WHERE id = ?', id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_create', input_summary: JSON.stringify({ project_id, title }).slice(0, 500), success: true });
@@ -239,13 +240,14 @@ export function registerTaskTools(server: McpServer) {
     async ({ task_id, content }, extra) => {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
+      const createdByLabel = user?.name ?? agentLabel;
       const db = getDb();
       const id = generateId();
       const now = new Date().toISOString();
       await db.run(`
         INSERT INTO task_comments (id, task_id, content, created_by, created_at)
         VALUES (?, ?, ?, ?, ?)
-      `, id, task_id, content, agentLabel, now);
+      `, id, task_id, content, createdByLabel, now);
       const comment = await db.get('SELECT * FROM task_comments WHERE id = ?', id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_add_comment', success: true });
       notifyResourceChange();

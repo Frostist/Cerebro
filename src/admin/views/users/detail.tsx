@@ -27,7 +27,14 @@ export const UserDetailPage: FC<UserDetailProps> = ({ user, isSuperadmin, flash,
           <h2>Profile</h2>
           <dl class="definition-list">
             <dt>Username</dt><dd class="mono">{subject.username}</dd>
-            <dt>Name</dt><dd>{subject.name}</dd>
+            <dt>Name</dt>
+            <dd>
+              <form method="post" action={`/admin/users/${subject.id}/rename`} style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+                <input type="hidden" name="_csrf" value={csrfToken ?? ''} />
+                <input type="text" name="name" value={subject.name} required style="flex:1;min-width:120px;padding:0.25rem 0.5rem;font-size:inherit;border:1px solid var(--border);border-radius:4px;background:var(--bg-input,#fff);color:inherit" />
+                <button type="submit" class="btn btn-sm btn-secondary">Rename</button>
+              </form>
+            </dd>
             <dt>Email</dt><dd>{subject.email ?? '—'}</dd>
             <dt>Role</dt><dd><span class={`badge ${subject.role === 'admin' ? 'badge-blue' : 'badge-gray'}`}>{subject.role}</span></dd>
             <dt>Status</dt><dd>{subject.disabled ? <span class="badge badge-error">disabled</span> : <span class="badge badge-success">active</span>}</dd>

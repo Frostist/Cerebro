@@ -316,6 +316,23 @@ adminRouter.post('/admin/users/:id/regenerate-creds', async (c) => {
   return c.redirect(`/admin/users/${subject.id}/credentials?token=${viewToken}`);
 });
 
+adminRouter.post('/admin/users/:id/rename', async (c) => {
+  if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
+  const body = await c.req.parseBody();
+  const name = (body['name'] as string)?.trim();
+  if (!name) {
+    setFlash(c, 'error', 'Name cannot be empty.');
+    return c.redirect(`/admin/users/${c.req.param('id')}`);
+  }
+  const db = getDb();
+  const subject = await db.get('SELECT * FROM users WHERE id = ?', c.req.param('id')) as any;
+  if (!subject) return c.text('Not found', 404);
+  await db.run('UPDATE users SET name = ?, updated_at = ? WHERE id = ?', name, new Date().toISOString(), subject.id);
+  logActivity({ user_id: (c.get('user') as any).id, agent_label: null, tool_name: 'admin:rename_user', success: true, input_summary: `renamed user ${subject.username} to ${name}` });
+  setFlash(c, 'success', `User renamed to "${name}".`);
+  return c.redirect(`/admin/users/${c.req.param('id')}`);
+});
+
 adminRouter.post('/admin/users/:id/revoke-token', async (c) => {
   if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
   await getDb().run('DELETE FROM oauth_tokens WHERE user_id = ?', c.req.param('id'));
