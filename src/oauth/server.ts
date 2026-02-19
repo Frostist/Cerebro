@@ -257,7 +257,49 @@ oauthRouter.post('/oauth/authorize', async (c) => {
   if (state) callbackUrl.searchParams.set('state', state);
 
   console.log(`[oauth] login success for user ${user.username}, redirecting to ${callbackUrl.origin}${callbackUrl.pathname}`);
-  return c.redirect(callbackUrl.toString());
+
+  const connectionLabel = agent_label?.trim() || user.username;
+  const successHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connected — Cerebro</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 2rem; width: 100%; max-width: 380px; text-align: center; }
+    .icon { width: 56px; height: 56px; background: #dcfce7; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem; }
+    .icon svg { width: 28px; height: 28px; color: #16a34a; }
+    h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
+    p { color: #6b7280; font-size: 0.875rem; margin-bottom: 1.5rem; line-height: 1.5; }
+    .label { display: inline-block; background: #f3f4f6; border-radius: 4px; padding: 0.25rem 0.625rem; font-size: 0.8125rem; font-weight: 500; color: #374151; margin-bottom: 1.5rem; }
+    .progress { height: 3px; background: #e5e7eb; border-radius: 2px; overflow: hidden; }
+    .progress-bar { height: 100%; background: #2563EB; border-radius: 2px; animation: fill 2.5s linear forwards; }
+    @keyframes fill { from { width: 0% } to { width: 100% } }
+    .redirect-note { color: #9ca3af; font-size: 0.75rem; margin-top: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+      </svg>
+    </div>
+    <h1>Successfully Connected</h1>
+    <p>Your Claude agent has been authorized to access Cerebro.</p>
+    <div class="label">${escapeHtml(connectionLabel)}</div>
+    <div class="progress"><div class="progress-bar"></div></div>
+    <p class="redirect-note">Returning to Claude…</p>
+  </div>
+  <script>
+    setTimeout(function() { window.location.href = ${JSON.stringify(callbackUrl.toString())}; }, 2500);
+  </script>
+</body>
+</html>`;
+
+  return c.html(successHtml);
 });
 
 // POST /oauth/token
