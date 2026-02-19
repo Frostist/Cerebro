@@ -9,13 +9,14 @@ interface UserDetailProps {
   flash?: { type: 'success' | 'error'; message: string } | null;
   subject: any;
   token: any;
+  csrfToken?: string;
 }
 
-export const UserDetailPage: FC<UserDetailProps> = ({ user, isSuperadmin, flash, subject, token }) => {
+export const UserDetailPage: FC<UserDetailProps> = ({ user, isSuperadmin, flash, subject, token, csrfToken }) => {
   const isSubjectSuperadmin = subject.email === process.env.SUPERADMIN_EMAIL;
 
   return (
-    <Layout title={`User: ${subject.username}`} user={user} isSuperadmin={isSuperadmin} flash={flash}>
+    <Layout title={`User: ${subject.username}`} user={user} isSuperadmin={isSuperadmin} flash={flash} csrfToken={csrfToken}>
       <div class="page-header">
         <h1>{subject.name}</h1>
         <a href="/admin/users" class="btn btn-secondary">← Users</a>
@@ -37,20 +38,24 @@ export const UserDetailPage: FC<UserDetailProps> = ({ user, isSuperadmin, flash,
             <div class="card-actions">
               {!subject.disabled ? (
                 <form method="post" action={`/admin/users/${subject.id}/disable`} style="display:inline">
+                  <input type="hidden" name="_csrf" value={csrfToken ?? ''} />
                   <button type="submit" class="btn btn-sm btn-danger">Disable</button>
                 </form>
               ) : (
                 <form method="post" action={`/admin/users/${subject.id}/enable`} style="display:inline">
+                  <input type="hidden" name="_csrf" value={csrfToken ?? ''} />
                   <button type="submit" class="btn btn-sm btn-secondary">Enable</button>
                 </form>
               )}
               {isSuperadmin && subject.role === 'member' && (
                 <form method="post" action={`/admin/users/${subject.id}/promote`} style="display:inline">
+                  <input type="hidden" name="_csrf" value={csrfToken ?? ''} />
                   <button type="submit" class="btn btn-sm btn-secondary">Promote to Admin</button>
                 </form>
               )}
               {isSuperadmin && subject.role === 'admin' && (
                 <form method="post" action={`/admin/users/${subject.id}/demote`} style="display:inline">
+                  <input type="hidden" name="_csrf" value={csrfToken ?? ''} />
                   <button type="submit" class="btn btn-sm btn-secondary">Demote to Member</button>
                 </form>
               )}
@@ -73,6 +78,7 @@ export const UserDetailPage: FC<UserDetailProps> = ({ user, isSuperadmin, flash,
           {token && (
             <div class="card-actions">
               <form method="post" action={`/admin/users/${subject.id}/revoke-token`} style="display:inline">
+                <input type="hidden" name="_csrf" value={csrfToken ?? ''} />
                 <button type="submit" class="btn btn-sm btn-danger"
                   onclick="return confirm('Revoke this token? The agent will need to re-authenticate.')">
                   Revoke Token
@@ -84,6 +90,7 @@ export const UserDetailPage: FC<UserDetailProps> = ({ user, isSuperadmin, flash,
             <div class="card-actions" style="margin-top:1rem">
               <form method="post" action={`/admin/users/${subject.id}/regenerate-creds`}
                 onsubmit="return confirm('Regenerate credentials? This will revoke the existing token and generate a new username and password.')">
+                <input type="hidden" name="_csrf" value={csrfToken ?? ''} />
                 <button type="submit" class="btn btn-sm btn-danger">Regenerate Credentials</button>
               </form>
             </div>
@@ -97,6 +104,7 @@ export const UserDetailPage: FC<UserDetailProps> = ({ user, isSuperadmin, flash,
           <p>Permanently delete this user and all their sessions and tokens. This cannot be undone.</p>
           <form method="post" action={`/admin/users/${subject.id}/delete`}
             onsubmit={`return confirm('Delete user ${subject.username}? This is permanent and cannot be undone.')`}>
+            <input type="hidden" name="_csrf" value={csrfToken ?? ''} />
             <button type="submit" class="btn btn-danger">Delete User</button>
           </form>
         </div>

@@ -7,9 +7,10 @@ interface LayoutProps {
   user: User;
   isSuperadmin: boolean;
   flash?: { type: 'success' | 'error'; message: string } | null;
+  csrfToken?: string;
 }
 
-export const Layout: FC<PropsWithChildren<LayoutProps>> = ({ title, user, isSuperadmin, flash, children }) => {
+export const Layout: FC<PropsWithChildren<LayoutProps>> = ({ title, user, isSuperadmin, flash, csrfToken, children }) => {
   return (
     <html lang="en">
       <head>
@@ -31,6 +32,7 @@ export const Layout: FC<PropsWithChildren<LayoutProps>> = ({ title, user, isSupe
           <div class="nav-user">
             <span class="nav-username">{user.username}</span>
             <form method="post" action="/admin/logout" style="display:inline">
+              <input type="hidden" name="_csrf" value={csrfToken ?? ''} />
               <button type="submit" class="btn-link">Logout</button>
             </form>
           </div>

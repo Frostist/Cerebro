@@ -33,6 +33,7 @@ export async function adminAuth(c: Context<any>, next: Next) {
 
   c.set('user', user);
   c.set('isSuperadmin', user.email === process.env.SUPERADMIN_EMAIL);
+  c.set('csrfToken', session.csrf_token ?? '');
 
   await next();
 }

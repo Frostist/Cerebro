@@ -179,19 +179,26 @@ async function createSchema(db: DbAdapter, dialect: 'sqlite' | 'postgres'): Prom
       code           TEXT PRIMARY KEY,
       user_id        TEXT NOT NULL REFERENCES users(id),
       code_challenge TEXT NOT NULL,
+      redirect_uri   TEXT,
+      agent_label    TEXT,
       expires_at     TEXT NOT NULL,
       used           INTEGER NOT NULL DEFAULT 0
     )
   `);
+  // Migrate existing deployments that may lack these columns
+  await db.exec(`ALTER TABLE auth_codes ADD COLUMN redirect_uri TEXT`).catch(() => {});
+  await db.exec(`ALTER TABLE auth_codes ADD COLUMN agent_label TEXT`).catch(() => {});
 
   await db.exec(`
     CREATE TABLE IF NOT EXISTS admin_sessions (
       id         TEXT PRIMARY KEY,
       user_id    TEXT NOT NULL REFERENCES users(id),
+      csrf_token TEXT NOT NULL DEFAULT '',
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL
     )
   `);
+  await db.exec(`ALTER TABLE admin_sessions ADD COLUMN csrf_token TEXT NOT NULL DEFAULT ''`).catch(() => {});
 
   await db.exec(`
     CREATE TABLE IF NOT EXISTS activity_log (

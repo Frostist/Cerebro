@@ -227,16 +227,14 @@ oauthRouter.post('/oauth/authorize', async (c) => {
     return c.text('Invalid redirect_uri', 400);
   }
 
-  // Issue auth code
+  // Issue auth code — store redirect_uri and agent_label alongside the code
   const code = generateToken();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
   await db.run(`
-    INSERT INTO auth_codes (code, user_id, code_challenge, expires_at, used)
-    VALUES (?, ?, ?, ?, 0)
-  `, code, user.id, code_challenge, expiresAt);
-
-  pendingAgentLabels.set(code, agent_label ?? '');
+    INSERT INTO auth_codes (code, user_id, code_challenge, redirect_uri, agent_label, expires_at, used)
+    VALUES (?, ?, ?, ?, ?, ?, 0)
+  `, code, user.id, code_challenge, resolvedRedirectUri, agent_label ?? '', expiresAt);
 
   const callbackUrl = new URL(resolvedRedirectUri);
   callbackUrl.searchParams.set('code', code);
@@ -245,9 +243,6 @@ oauthRouter.post('/oauth/authorize', async (c) => {
   console.log(`[oauth] login success for user ${user.username}, redirecting to ${callbackUrl.origin}${callbackUrl.pathname}`);
   return c.redirect(callbackUrl.toString());
 });
-
-// Temporary in-memory store for agent_label during code exchange
-const pendingAgentLabels = new Map<string, string>();
 
 // POST /oauth/token
 oauthRouter.post('/oauth/token', async (c) => {
@@ -288,6 +283,15 @@ async function handleAuthCode(c: any, body: Record<string, string>) {
     return c.json({ error: 'invalid_grant' }, 400);
   }
 
+  // RFC 6749 §4.1.3: if redirect_uri was present in the authorization request,
+  // it MUST be provided here and MUST be an exact match.
+  if (authCode.redirect_uri) {
+    if (!redirect_uri || redirect_uri !== authCode.redirect_uri) {
+      console.log(`[oauth] auth code exchange failed — redirect_uri mismatch`);
+      return c.json({ error: 'invalid_grant' }, 400);
+    }
+  }
+
   const valid = await verifyCodeChallenge(code_verifier, authCode.code_challenge);
   if (!valid) {
     console.log(`[oauth] auth code exchange failed — PKCE verification failed`);
@@ -301,9 +305,7 @@ async function handleAuthCode(c: any, body: Record<string, string>) {
   const refreshToken = generateToken();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString(); // 1 hour
-  const refreshExpiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
-  const agentLabel = pendingAgentLabels.get(code) ?? null;
-  pendingAgentLabels.delete(code);
+  const agentLabel = authCode.agent_label || null;
 
   // Revoke any existing token for this user
   await db.run('DELETE FROM oauth_tokens WHERE user_id = ?', authCode.user_id);

@@ -8,11 +8,12 @@ interface NewUserProps {
   isSuperadmin: boolean;
   flash?: { type: 'success' | 'error'; message: string } | null;
   error?: string;
+  csrfToken?: string;
 }
 
-export const NewUserPage: FC<NewUserProps> = ({ user, isSuperadmin, flash, error }) => {
+export const NewUserPage: FC<NewUserProps> = ({ user, isSuperadmin, flash, error, csrfToken }) => {
   return (
-    <Layout title="New User" user={user} isSuperadmin={isSuperadmin} flash={flash}>
+    <Layout title="New User" user={user} isSuperadmin={isSuperadmin} flash={flash} csrfToken={csrfToken}>
       <div class="page-header">
         <h1>New User</h1>
         <a href="/admin/users" class="btn btn-secondary">← Back</a>
@@ -20,6 +21,7 @@ export const NewUserPage: FC<NewUserProps> = ({ user, isSuperadmin, flash, error
       {error && <div class="alert alert-error">{error}</div>}
       <div class="form-card">
         <form method="post" action="/admin/users">
+          <input type="hidden" name="_csrf" value={csrfToken ?? ''} />
           <div class="form-group">
             <label for="name">Full Name <span class="required">*</span></label>
             <input id="name" name="name" type="text" required maxlength={200} />

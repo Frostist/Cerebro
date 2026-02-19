@@ -23,13 +23,7 @@ export async function bearerAuth(c: Context<any>, next: Next) {
   `, token, new Date().toISOString()) as any;
 
   if (!record) {
-    // Check if the token exists but is expired
-    const expired = await db.get('SELECT expires_at FROM oauth_tokens WHERE access_token = ?', token) as any;
-    if (expired) {
-      console.log(`[auth] ${c.req.method} ${c.req.path} — token ${tokenPrefix}… expired at ${expired.expires_at}, returning 401`);
-    } else {
-      console.log(`[auth] ${c.req.method} ${c.req.path} — token ${tokenPrefix}… not found in DB, returning 401`);
-    }
+    console.log(`[auth] ${c.req.method} ${c.req.path} — invalid or expired token, returning 401`);
     return c.json({ error: 'unauthorized' }, 401);
   }
   if (record.disabled) {

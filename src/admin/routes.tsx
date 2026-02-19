@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { adminAuth } from './middleware.ts';
 import { getDb, uniqueUsername, logActivity } from '../db.ts';
-import { generateId, generateViewToken, encryptFlash, decryptFlash } from '../utils/crypto.ts';
+import { generateId, generateToken, generateViewToken, encryptFlash, decryptFlash } from '../utils/crypto.ts';
 import { generatePassword } from '../utils/username.ts';
 import { LoginPage } from './views/login.tsx';
 import { DashboardPage } from './views/dashboard.tsx';
@@ -17,10 +17,16 @@ import { ActivityPage } from './views/activity.tsx';
 import { SettingsPage } from './views/settings.tsx';
 import type { User } from '../types.ts';
 
-type Vars = { user: User; isSuperadmin: boolean };
+type Vars = { user: User; isSuperadmin: boolean; csrfToken: string };
 export const adminRouter = new Hono<{ Variables: Vars }>();
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+async function verifyCsrf(c: any): Promise<boolean> {
+  const body = await c.req.parseBody();
+  const sessionToken = c.get('csrfToken') as string;
+  return !!sessionToken && body['_csrf'] === sessionToken;
+}
 
 function getFlash(c: any): { type: 'success' | 'error'; message: string } | null {
   const raw = getCookie(c, 'flash');
@@ -38,17 +44,21 @@ function setFlash(c: any, type: 'success' | 'error', message: string) {
   setCookie(c, 'flash', val, { httpOnly: true, sameSite: 'Strict', maxAge: 30, path: '/' });
 }
 
+function requireFlashSecret(): string {
+  const secret = process.env.FLASH_SECRET;
+  if (!secret) throw new Error('FLASH_SECRET environment variable is not set');
+  return secret;
+}
+
 async function getFlashPassword(c: any): Promise<string | null> {
   const raw = getCookie(c, 'flash_pw');
   if (!raw) return null;
   deleteCookie(c, 'flash_pw');
-  const secret = process.env.FLASH_SECRET ?? 'default';
-  return decryptFlash(raw, secret);
+  return decryptFlash(raw, requireFlashSecret());
 }
 
 async function setFlashPassword(c: any, password: string) {
-  const secret = process.env.FLASH_SECRET ?? 'default';
-  const encrypted = await encryptFlash(password, secret);
+  const encrypted = await encryptFlash(password, requireFlashSecret());
   setCookie(c, 'flash_pw', encrypted, { httpOnly: true, sameSite: 'Strict', maxAge: 300, path: '/' });
 }
 
@@ -81,9 +91,10 @@ adminRouter.post('/admin/login', async (c) => {
   }
 
   const sessionId = generateId();
+  const csrfToken = generateToken();
   const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
   const now = new Date().toISOString();
-  await db.run('INSERT INTO admin_sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)', sessionId, user.id, expiresAt, now);
+  await db.run('INSERT INTO admin_sessions (id, user_id, csrf_token, expires_at, created_at) VALUES (?, ?, ?, ?, ?)', sessionId, user.id, csrfToken, expiresAt, now);
 
   const secure = (process.env.BASE_URL ?? '').startsWith('https');
   setCookie(c, 'session', sessionId, { httpOnly: true, secure, sameSite: 'Strict', maxAge: 8 * 3600, path: '/' });
@@ -91,9 +102,16 @@ adminRouter.post('/admin/login', async (c) => {
 });
 
 adminRouter.post('/admin/logout', async (c) => {
+  // Logout doesn't go through adminAuth so we verify the session directly
   const sessionId = getCookie(c, 'session');
   if (sessionId) {
-    await getDb().run('DELETE FROM admin_sessions WHERE id = ?', sessionId);
+    const db = getDb();
+    const body = await c.req.parseBody();
+    const session = await db.get('SELECT csrf_token FROM admin_sessions WHERE id = ?', sessionId) as any;
+    if (!session || !session.csrf_token || body['_csrf'] !== session.csrf_token) {
+      return c.text('Invalid CSRF token', 403);
+    }
+    await db.run('DELETE FROM admin_sessions WHERE id = ?', sessionId);
   }
   deleteCookie(c, 'session');
   return c.redirect('/admin/login');
@@ -147,6 +165,7 @@ adminRouter.get('/admin/users/new', (c) => {
 });
 
 adminRouter.post('/admin/users', async (c) => {
+  if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
   const user = c.get('user') as any;
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   const body = await c.req.parseBody();
@@ -213,6 +232,7 @@ adminRouter.get('/admin/users/:id/credentials', async (c) => {
 
 // User action routes
 adminRouter.post('/admin/users/:id/confirm', async (c) => {
+  if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
   const db = getDb();
   await db.run('UPDATE users SET confirmed = 1, updated_at = ? WHERE id = ?', new Date().toISOString(), c.req.param('id'));
   setFlash(c, 'success', 'User confirmed.');
@@ -220,6 +240,7 @@ adminRouter.post('/admin/users/:id/confirm', async (c) => {
 });
 
 adminRouter.post('/admin/users/:id/disable', async (c) => {
+  if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
   const user = c.get('user') as any;
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   const db = getDb();
@@ -237,6 +258,7 @@ adminRouter.post('/admin/users/:id/disable', async (c) => {
 });
 
 adminRouter.post('/admin/users/:id/enable', async (c) => {
+  if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
   const db = getDb();
   await db.run('UPDATE users SET disabled = 0, updated_at = ? WHERE id = ?', new Date().toISOString(), c.req.param('id'));
   setFlash(c, 'success', 'User enabled.');
@@ -244,6 +266,7 @@ adminRouter.post('/admin/users/:id/enable', async (c) => {
 });
 
 adminRouter.post('/admin/users/:id/promote', async (c) => {
+  if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   if (!isSuperadmin) return c.text('Forbidden', 403);
   await getDb().run("UPDATE users SET role = 'admin', updated_at = ? WHERE id = ?", new Date().toISOString(), c.req.param('id'));
@@ -252,6 +275,7 @@ adminRouter.post('/admin/users/:id/promote', async (c) => {
 });
 
 adminRouter.post('/admin/users/:id/demote', async (c) => {
+  if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   if (!isSuperadmin) return c.text('Forbidden', 403);
   const subject = await getDb().get('SELECT * FROM users WHERE id = ?', c.req.param('id')) as any;
@@ -265,6 +289,7 @@ adminRouter.post('/admin/users/:id/demote', async (c) => {
 });
 
 adminRouter.post('/admin/users/:id/regenerate-creds', async (c) => {
+  if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   if (!isSuperadmin) return c.text('Forbidden', 403);
 
@@ -290,12 +315,14 @@ adminRouter.post('/admin/users/:id/regenerate-creds', async (c) => {
 });
 
 adminRouter.post('/admin/users/:id/revoke-token', async (c) => {
+  if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
   await getDb().run('DELETE FROM oauth_tokens WHERE user_id = ?', c.req.param('id'));
   setFlash(c, 'success', 'Token revoked.');
   return c.redirect(`/admin/users/${c.req.param('id')}`);
 });
 
 adminRouter.post('/admin/users/:id/delete', async (c) => {
+  if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   if (!isSuperadmin) return c.text('Forbidden', 403);
 
@@ -349,6 +376,7 @@ adminRouter.get('/admin/projects/:id', async (c) => {
 });
 
 adminRouter.post('/admin/projects/:id/delete', async (c) => {
+  if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
   await getDb().run('DELETE FROM projects WHERE id = ?', c.req.param('id'));
   setFlash(c, 'success', 'Project deleted.');
   return c.redirect('/admin/projects');
@@ -382,6 +410,7 @@ adminRouter.get('/admin/settings', async (c) => {
 });
 
 adminRouter.post('/admin/settings/revoke-all-tokens', async (c) => {
+  if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   if (!isSuperadmin) return c.text('Forbidden', 403);
   await getDb().run('DELETE FROM oauth_tokens');
@@ -390,6 +419,7 @@ adminRouter.post('/admin/settings/revoke-all-tokens', async (c) => {
 });
 
 adminRouter.post('/admin/settings/export-db', async (c) => {
+  if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   if (!isSuperadmin) return c.text('Forbidden', 403);
   const dbPath = process.env.DATABASE_PATH ?? './taskmanager.db';

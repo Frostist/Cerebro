@@ -9,11 +9,12 @@ interface UsersListProps {
   flash?: { type: 'success' | 'error'; message: string } | null;
   users: any[];
   filter?: string;
+  csrfToken?: string;
 }
 
-export const UsersListPage: FC<UsersListProps> = ({ user, isSuperadmin, flash, users, filter }) => {
+export const UsersListPage: FC<UsersListProps> = ({ user, isSuperadmin, flash, users, filter, csrfToken }) => {
   return (
-    <Layout title="Users" user={user} isSuperadmin={isSuperadmin} flash={flash}>
+    <Layout title="Users" user={user} isSuperadmin={isSuperadmin} flash={flash} csrfToken={csrfToken}>
       <div class="page-header">
         <h1>Users</h1>
         <div class="header-actions">
@@ -52,20 +53,24 @@ export const UsersListPage: FC<UsersListProps> = ({ user, isSuperadmin, flash, u
                 <td class="actions-cell">
                   {!u.disabled ? (
                     <form method="post" action={`/admin/users/${u.id}/disable`} style="display:inline">
+                      <input type="hidden" name="_csrf" value={csrfToken ?? ''} />
                       <button type="submit" class="btn btn-sm btn-danger">Disable</button>
                     </form>
                   ) : (
                     <form method="post" action={`/admin/users/${u.id}/enable`} style="display:inline">
+                      <input type="hidden" name="_csrf" value={csrfToken ?? ''} />
                       <button type="submit" class="btn btn-sm btn-secondary">Enable</button>
                     </form>
                   )}
                   {isSuperadmin && u.role === 'member' && (
                     <form method="post" action={`/admin/users/${u.id}/promote`} style="display:inline">
+                      <input type="hidden" name="_csrf" value={csrfToken ?? ''} />
                       <button type="submit" class="btn btn-sm btn-secondary">→ Admin</button>
                     </form>
                   )}
                   {isSuperadmin && u.role === 'admin' && u.email !== process.env.SUPERADMIN_EMAIL && (
                     <form method="post" action={`/admin/users/${u.id}/demote`} style="display:inline">
+                      <input type="hidden" name="_csrf" value={csrfToken ?? ''} />
                       <button type="submit" class="btn btn-sm btn-secondary">→ Member</button>
                     </form>
                   )}
