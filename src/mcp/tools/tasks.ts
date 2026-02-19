@@ -168,34 +168,43 @@ export function registerTaskTools(server: McpServer) {
   // tasks_assign
   server.tool(
     'tasks_assign',
-    'Assign a task to a project member (or unassign)',
+    'Assign one or more tasks to a project member (or unassign). All tasks must belong to the same project.',
     {
-      task_id: z.string(),
+      task_ids: z.array(z.string()).min(1),
       user_id: z.string().nullable(),
     },
     { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
-    async ({ task_id, user_id }, extra) => {
+    async ({ task_ids, user_id }, extra) => {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
-      const task = await db.get('SELECT * FROM tasks WHERE id = ?', task_id) as any;
-      if (!task) throw new Error(`Task not found: ${task_id}`);
+
+      const placeholders = task_ids.map(() => '?').join(', ');
+      const tasks = await db.all(`SELECT * FROM tasks WHERE id IN (${placeholders})`, ...task_ids) as any[];
+      const missing = task_ids.filter(id => !tasks.find((t: any) => t.id === id));
+      if (missing.length) throw new Error(`Tasks not found: ${missing.join(', ')}`);
 
       if (user_id) {
-        const member = await db.get(`
-          SELECT pm.user_id FROM project_members pm
-          JOIN users u ON pm.user_id = u.id
-          WHERE pm.project_id = ? AND pm.user_id = ? AND u.confirmed = 1 AND u.disabled = 0
-        `, task.project_id, user_id);
-        if (!member) throw new Error('Assignee must be a confirmed, active project member');
+        const projectIds = [...new Set(tasks.map((t: any) => t.project_id))];
+        for (const project_id of projectIds) {
+          const member = await db.get(`
+            SELECT pm.user_id FROM project_members pm
+            JOIN users u ON pm.user_id = u.id
+            WHERE pm.project_id = ? AND pm.user_id = ? AND u.confirmed = 1 AND u.disabled = 0
+          `, project_id, user_id);
+          if (!member) throw new Error('Assignee must be a confirmed, active project member');
+        }
       }
 
       const now = new Date().toISOString();
-      await db.run('UPDATE tasks SET assigned_to = ?, updated_at = ? WHERE id = ?', user_id, now, task_id);
-      const updated = await db.get('SELECT * FROM tasks WHERE id = ?', task_id);
-      logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_assign', success: true });
+      await db.run(
+        `UPDATE tasks SET assigned_to = ?, updated_at = ? WHERE id IN (${placeholders})`,
+        user_id, now, ...task_ids,
+      );
+      const updated = await db.all(`SELECT * FROM tasks WHERE id IN (${placeholders})`, ...task_ids);
+      logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_assign', input_summary: JSON.stringify({ task_ids, user_id }).slice(0, 500), success: true });
       notifyResourceChange();
-      const result = { task: updated };
+      const result = { tasks: updated };
       return { structuredContent: result, content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
     },
   );
