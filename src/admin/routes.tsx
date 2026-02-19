@@ -139,7 +139,11 @@ adminRouter.get('/admin', async (c) => {
     overdueTasks: ((await db.get("SELECT COUNT(*) as n FROM tasks WHERE due_date < ? AND status NOT IN ('completed','cancelled')", now)) as any).n,
     dueSoonTasks: ((await db.get("SELECT COUNT(*) as n FROM tasks WHERE due_date >= ? AND due_date <= ? AND status NOT IN ('completed','cancelled')", now, in24h)) as any).n,
   };
-  const recentActivity = await db.all('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 10');
+  const recentActivity = await db.all(`
+    SELECT al.*, u.name as user_name FROM activity_log al
+    LEFT JOIN users u ON al.user_id = u.id
+    ORDER BY al.created_at DESC LIMIT 10
+  `);
 
   return c.html(<DashboardPage user={user} isSuperadmin={isSuperadmin} flash={flash} stats={stats} recentActivity={recentActivity} />);
 });
@@ -413,8 +417,8 @@ adminRouter.get('/admin/activity', async (c) => {
   const filterUserId = c.req.query('user_id');
   const db = getDb();
   const logs = filterUserId
-    ? await db.all('SELECT * FROM activity_log WHERE user_id = ? ORDER BY created_at DESC LIMIT 500', filterUserId)
-    : await db.all('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 500');
+    ? await db.all(`SELECT al.*, u.name as user_name FROM activity_log al LEFT JOIN users u ON al.user_id = u.id WHERE al.user_id = ? ORDER BY al.created_at DESC LIMIT 500`, filterUserId)
+    : await db.all(`SELECT al.*, u.name as user_name FROM activity_log al LEFT JOIN users u ON al.user_id = u.id ORDER BY al.created_at DESC LIMIT 500`);
   const users = await db.all('SELECT id, username, name FROM users ORDER BY username ASC');
   return c.html(<ActivityPage user={user} isSuperadmin={isSuperadmin} flash={flash} logs={logs} users={users} filterUserId={filterUserId} />);
 });

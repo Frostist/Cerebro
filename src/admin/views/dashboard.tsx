@@ -65,7 +65,7 @@ export const DashboardPage: FC<DashboardProps> = ({ user, isSuperadmin, flash, s
             <thead>
               <tr>
                 <th>Time</th>
-                <th>Agent</th>
+                <th>User</th>
                 <th>Tool</th>
                 <th>Status</th>
               </tr>
@@ -74,7 +74,7 @@ export const DashboardPage: FC<DashboardProps> = ({ user, isSuperadmin, flash, s
               {recentActivity.map((a) => (
                 <tr key={a.id}>
                   <td class="mono">{new Date(a.created_at).toLocaleString()}</td>
-                  <td>{a.agent_label ?? a.user_id ?? '—'}</td>
+                  <td>{a.user_name ?? a.agent_label ?? '—'}</td>
                   <td class="mono">{a.tool_name}</td>
                   <td>
                     <span class={`badge ${a.success ? 'badge-success' : 'badge-error'}`}>
