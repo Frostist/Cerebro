@@ -194,6 +194,7 @@ oauthRouter.post('/oauth/authorize', async (c) => {
   callbackUrl.searchParams.set('code', code);
   if (state) callbackUrl.searchParams.set('state', state);
 
+  console.log(`[oauth] login success for user ${user.username}, redirecting to ${callbackUrl.origin}${callbackUrl.pathname}`);
   return c.redirect(callbackUrl.toString());
 });
 
@@ -207,6 +208,7 @@ oauthRouter.post('/oauth/token', async (c) => {
 
   const body = await c.req.parseBody();
   const grantType = body['grant_type'] as string;
+  console.log(`[oauth] POST /oauth/token grant_type=${grantType} from ${ip}`);
 
   if (grantType === 'authorization_code') {
     return handleAuthCode(c, body as Record<string, string>);
@@ -214,6 +216,7 @@ oauthRouter.post('/oauth/token', async (c) => {
     return handleRefreshToken(c, body as Record<string, string>);
   }
 
+  console.log(`[oauth] unsupported grant_type: ${grantType}`);
   return c.json({ error: 'unsupported_grant_type' }, 400);
 });
 
@@ -225,10 +228,23 @@ async function handleAuthCode(c: any, body: Record<string, string>) {
     SELECT * FROM auth_codes WHERE code = ? AND used = 0 AND expires_at > ?
   `, code, new Date().toISOString()) as any;
 
-  if (!authCode) return c.json({ error: 'invalid_grant' }, 400);
+  if (!authCode) {
+    const anyCode = await db.get('SELECT used, expires_at FROM auth_codes WHERE code = ?', code) as any;
+    if (anyCode?.used) {
+      console.log(`[oauth] auth code exchange failed — code already used`);
+    } else if (anyCode) {
+      console.log(`[oauth] auth code exchange failed — code expired at ${anyCode.expires_at}`);
+    } else {
+      console.log(`[oauth] auth code exchange failed — code not found`);
+    }
+    return c.json({ error: 'invalid_grant' }, 400);
+  }
 
   const valid = await verifyCodeChallenge(code_verifier, authCode.code_challenge);
-  if (!valid) return c.json({ error: 'invalid_grant' }, 400);
+  if (!valid) {
+    console.log(`[oauth] auth code exchange failed — PKCE verification failed`);
+    return c.json({ error: 'invalid_grant' }, 400);
+  }
 
   // Mark used
   await db.run('UPDATE auth_codes SET used = 1 WHERE code = ?', code);
@@ -249,6 +265,7 @@ async function handleAuthCode(c: any, body: Record<string, string>) {
     VALUES (?, ?, ?, ?, ?, 'read write')
   `, accessToken, authCode.user_id, refreshToken, agentLabel, expiresAt);
 
+  console.log(`[oauth] issued token for user_id=${authCode.user_id} agentLabel=${agentLabel} expires=${expiresAt}`);
   return c.json({
     access_token: accessToken,
     token_type: 'Bearer',
@@ -263,7 +280,11 @@ async function handleRefreshToken(c: any, body: Record<string, string>) {
   const db = getDb();
 
   const token = await db.get('SELECT * FROM oauth_tokens WHERE refresh_token = ?', refresh_token) as any;
-  if (!token) return c.json({ error: 'invalid_grant' }, 400);
+  if (!token) {
+    console.log(`[oauth] refresh token not found`);
+    return c.json({ error: 'invalid_grant' }, 400);
+  }
+  console.log(`[oauth] refreshing token for user_id=${token.user_id}`);
 
   const accessToken = generateToken();
   const newRefresh = generateToken();

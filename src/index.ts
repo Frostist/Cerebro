@@ -30,6 +30,14 @@ app.use('/*', cors({
   credentials: true,
 }));
 
+// Request logger
+app.use('/*', async (c, next) => {
+  const start = Date.now();
+  await next();
+  const ms = Date.now() - start;
+  console.log(`[http] ${c.req.method} ${c.req.path} → ${c.res.status} (${ms}ms)`);
+});
+
 app.get('/health', (c) => c.json({ ok: true, ts: new Date().toISOString() }));
 
 app.use('/static/*', serveStatic({ root: './src' }));
