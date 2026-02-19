@@ -20,6 +20,16 @@ function checkRateLimit(ip: string): boolean {
 
 export const oauthRouter = new Hono();
 
+// Validate that a redirect_uri is allowed: must be HTTPS and on claude.ai (or a subdomain).
+function isAllowedRedirectUri(uri: string): boolean {
+  try {
+    const url = new URL(uri);
+    return url.protocol === 'https:' && (url.hostname === 'claude.ai' || url.hostname.endsWith('.claude.ai'));
+  } catch {
+    return false;
+  }
+}
+
 function getBase(): string {
   let base = process.env.BASE_URL ?? '';
   if (base && !base.startsWith('http://') && !base.startsWith('https://')) {
@@ -49,16 +59,24 @@ oauthRouter.get('/.well-known/oauth-authorization-server', (c) => {
 oauthRouter.post('/oauth/register', async (c) => {
   console.log('[oauth] POST /oauth/register — dynamic client registration');
   const body = await c.req.json().catch(() => ({})) as Record<string, any>;
+
+  const requestedUris: string[] = Array.isArray(body.redirect_uris) ? body.redirect_uris : [];
+  const invalidUris = requestedUris.filter((uri) => !isAllowedRedirectUri(uri));
+  if (invalidUris.length > 0) {
+    console.log(`[oauth] register rejected — invalid redirect_uris: ${invalidUris.join(', ')}`);
+    return c.json({ error: 'invalid_redirect_uri', error_description: 'redirect_uris must use HTTPS and be on the claude.ai domain' }, 400);
+  }
+
   const clientId = `claude-${generateId()}`;
+  // Spread body first so our explicit fields always win
   return c.json({
+    ...body,
     client_id: clientId,
     client_secret_expires_at: 0,
-    redirect_uris: body.redirect_uris ?? [],
+    redirect_uris: requestedUris,
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
     token_endpoint_auth_method: 'none',
-    ...body,
-    client_id: clientId,
   }, 201);
 });
 
@@ -83,6 +101,12 @@ oauthRouter.get('/oauth/authorize', (c) => {
 
   if (response_type !== 'code' || !code_challenge) {
     return c.text('Invalid request', 400);
+  }
+
+  const resolvedRedirectUri = redirect_uri || 'https://claude.ai/api/mcp/auth_callback';
+  if (!isAllowedRedirectUri(resolvedRedirectUri)) {
+    console.log(`[oauth] authorize GET rejected — invalid redirect_uri: ${resolvedRedirectUri}`);
+    return c.text('Invalid redirect_uri', 400);
   }
 
   const html = `<!DOCTYPE html>
@@ -196,6 +220,13 @@ oauthRouter.post('/oauth/authorize', async (c) => {
     return c.html(html, 401);
   }
 
+  // Validate redirect_uri before issuing any code
+  const resolvedRedirectUri = redirect_uri || 'https://claude.ai/api/mcp/auth_callback';
+  if (!isAllowedRedirectUri(resolvedRedirectUri)) {
+    console.log(`[oauth] authorize rejected — invalid redirect_uri: ${resolvedRedirectUri}`);
+    return c.text('Invalid redirect_uri', 400);
+  }
+
   // Issue auth code
   const code = generateToken();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
@@ -205,12 +236,9 @@ oauthRouter.post('/oauth/authorize', async (c) => {
     VALUES (?, ?, ?, ?, 0)
   `, code, user.id, code_challenge, expiresAt);
 
-  // Store agent_label temporarily in auth_code by embedding in code (we'll use state)
-  // Actually store it on the token after exchange; pass via query param to ourselves won't work
-  // Best: store in a short-lived map keyed by code
   pendingAgentLabels.set(code, agent_label ?? '');
 
-  const callbackUrl = new URL(redirect_uri ?? 'https://claude.ai/api/mcp/auth_callback');
+  const callbackUrl = new URL(resolvedRedirectUri);
   callbackUrl.searchParams.set('code', code);
   if (state) callbackUrl.searchParams.set('state', state);
 

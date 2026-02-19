@@ -22,8 +22,27 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 type Vars = { user: User; isSuperadmin: boolean; agentLabel: string };
 const app = new Hono<{ Variables: Vars }>();
 
+// Allowed CORS origins: claude.ai (and subdomains) plus localhost for development.
+// The admin UI is server-rendered and same-origin, so it does not need a CORS entry.
+const ALLOWED_ORIGINS = new Set([
+  'https://claude.ai',
+]);
+
 app.use('/*', cors({
-  origin: (origin) => origin ?? '*',
+  origin: (origin) => {
+    if (!origin) return null; // non-browser requests (curl, MCP server-side calls)
+    if (ALLOWED_ORIGINS.has(origin)) return origin;
+    // Allow any claude.ai subdomain (e.g. staging.claude.ai)
+    try {
+      const url = new URL(origin);
+      if (url.protocol === 'https:' && url.hostname.endsWith('.claude.ai')) return origin;
+    } catch { /* invalid origin */ }
+    // Allow localhost in non-production environments for local testing
+    if (process.env.NODE_ENV !== 'production' && (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'))) {
+      return origin;
+    }
+    return null; // reject
+  },
   allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Authorization', 'Content-Type', 'Accept', 'Mcp-Session-Id'],
   exposeHeaders: ['Mcp-Session-Id'],
