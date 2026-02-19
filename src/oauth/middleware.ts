@@ -5,12 +5,14 @@ export async function bearerAuth(c: Context<any>, next: Next) {
   const auth = c.req.header('Authorization');
   if (!auth?.startsWith('Bearer ')) {
     const base = (process.env.BASE_URL ?? '').replace(/\/$/, '');
+    console.log(`[auth] ${c.req.method} ${c.req.path} — no Bearer token, returning 401`);
     return c.json({ error: 'unauthorized' }, 401, {
       'WWW-Authenticate': `Bearer realm="${base}", resource_metadata="${base}/.well-known/oauth-protected-resource"`,
     });
   }
 
   const token = auth.slice(7);
+  const tokenPrefix = token.slice(0, 8);
   const db = getDb();
 
   const record = await db.get(`
@@ -20,7 +22,22 @@ export async function bearerAuth(c: Context<any>, next: Next) {
     WHERE t.access_token = ? AND t.expires_at > ?
   `, token, new Date().toISOString()) as any;
 
-  if (!record || record.disabled || !record.confirmed) {
+  if (!record) {
+    // Check if the token exists but is expired
+    const expired = await db.get('SELECT expires_at FROM oauth_tokens WHERE access_token = ?', token) as any;
+    if (expired) {
+      console.log(`[auth] ${c.req.method} ${c.req.path} — token ${tokenPrefix}… expired at ${expired.expires_at}, returning 401`);
+    } else {
+      console.log(`[auth] ${c.req.method} ${c.req.path} — token ${tokenPrefix}… not found in DB, returning 401`);
+    }
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+  if (record.disabled) {
+    console.log(`[auth] ${c.req.method} ${c.req.path} — user ${record.username} is disabled, returning 401`);
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+  if (!record.confirmed) {
+    console.log(`[auth] ${c.req.method} ${c.req.path} — user ${record.username} not confirmed, returning 401`);
     return c.json({ error: 'unauthorized' }, 401);
   }
 
@@ -43,6 +60,7 @@ export async function bearerAuth(c: Context<any>, next: Next) {
   });
   c.set('agentLabel', record.agent_label ?? record.username);
   c.set('isSuperadmin', record.email === process.env.SUPERADMIN_EMAIL);
+  console.log(`[auth] ${c.req.method} ${c.req.path} — authenticated as ${record.username} (token ${tokenPrefix}…)`);
 
   await next();
 }
