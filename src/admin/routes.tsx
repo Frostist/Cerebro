@@ -371,8 +371,9 @@ adminRouter.get('/admin/projects', async (c) => {
   const user = c.get('user') as any;
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   const flash = getFlash(c);
+  const csrfToken = c.get('csrfToken') as string;
   const projects = await getDb().all('SELECT * FROM projects ORDER BY created_at DESC');
-  return c.html(<ProjectsListPage user={user} isSuperadmin={isSuperadmin} flash={flash} projects={projects} />);
+  return c.html(<ProjectsListPage user={user} isSuperadmin={isSuperadmin} flash={flash} projects={projects} csrfToken={csrfToken} />);
 });
 
 adminRouter.get('/admin/projects/:id', async (c) => {
