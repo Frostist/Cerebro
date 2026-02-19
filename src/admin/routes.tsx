@@ -161,7 +161,8 @@ adminRouter.get('/admin/users', async (c) => {
 adminRouter.get('/admin/users/new', (c) => {
   const user = c.get('user') as any;
   const isSuperadmin = c.get('isSuperadmin') as boolean;
-  return c.html(<NewUserPage user={user} isSuperadmin={isSuperadmin} />);
+  const csrfToken = c.get('csrfToken') as string;
+  return c.html(<NewUserPage user={user} isSuperadmin={isSuperadmin} csrfToken={csrfToken} />);
 });
 
 adminRouter.post('/admin/users', async (c) => {
@@ -202,7 +203,8 @@ adminRouter.get('/admin/users/:id', async (c) => {
   const subject = await db.get('SELECT * FROM users WHERE id = ?', c.req.param('id'));
   if (!subject) return c.text('Not found', 404);
   const token = await db.get('SELECT * FROM oauth_tokens WHERE user_id = ?', (subject as any).id);
-  return c.html(<UserDetailPage user={user} isSuperadmin={isSuperadmin} flash={flash} subject={subject} token={token} />);
+  const csrfToken = c.get('csrfToken') as string;
+  return c.html(<UserDetailPage user={user} isSuperadmin={isSuperadmin} flash={flash} subject={subject} token={token} csrfToken={csrfToken} />);
 });
 
 adminRouter.get('/admin/users/:id/credentials', async (c) => {
@@ -372,7 +374,8 @@ adminRouter.get('/admin/projects/:id', async (c) => {
     LEFT JOIN users u ON t.assigned_to = u.id
     WHERE t.project_id = ? ORDER BY t.created_at DESC
   `, c.req.param('id'));
-  return c.html(<ProjectDetailPage user={user} isSuperadmin={isSuperadmin} flash={flash} project={project} members={members} tasks={tasks} />);
+  const csrfToken = c.get('csrfToken') as string;
+  return c.html(<ProjectDetailPage user={user} isSuperadmin={isSuperadmin} flash={flash} project={project} members={members} tasks={tasks} csrfToken={csrfToken} />);
 });
 
 adminRouter.post('/admin/projects/:id/delete', async (c) => {
@@ -406,7 +409,8 @@ adminRouter.get('/admin/settings', async (c) => {
   const flash = getFlash(c);
   const db = getDb();
   const tokenCount = ((await db.get('SELECT COUNT(*) as n FROM oauth_tokens')) as any).n;
-  return c.html(<SettingsPage user={user} isSuperadmin={isSuperadmin} flash={flash} tokenCount={tokenCount} />);
+  const csrfToken = c.get('csrfToken') as string;
+  return c.html(<SettingsPage user={user} isSuperadmin={isSuperadmin} flash={flash} tokenCount={tokenCount} csrfToken={csrfToken} />);
 });
 
 adminRouter.post('/admin/settings/revoke-all-tokens', async (c) => {

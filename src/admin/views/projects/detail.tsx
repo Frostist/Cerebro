@@ -10,9 +10,10 @@ interface ProjectDetailProps {
   project: any;
   members: any[];
   tasks: any[];
+  csrfToken?: string;
 }
 
-export const ProjectDetailPage: FC<ProjectDetailProps> = ({ user, isSuperadmin, flash, project, members, tasks }) => {
+export const ProjectDetailPage: FC<ProjectDetailProps> = ({ user, isSuperadmin, flash, project, members, tasks, csrfToken }) => {
   const statusColor: Record<string, string> = {
     pending: 'badge-gray',
     in_progress: 'badge-blue',
@@ -27,7 +28,7 @@ export const ProjectDetailPage: FC<ProjectDetailProps> = ({ user, isSuperadmin, 
   };
 
   return (
-    <Layout title={project.name} user={user} isSuperadmin={isSuperadmin} flash={flash}>
+    <Layout title={project.name} user={user} isSuperadmin={isSuperadmin} flash={flash} csrfToken={csrfToken}>
       <div class="page-header">
         <h1>{project.name}</h1>
         <a href="/admin/projects" class="btn btn-secondary">← Projects</a>
