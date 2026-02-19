@@ -90,6 +90,17 @@ export const UserDetailPage: FC<UserDetailProps> = ({ user, isSuperadmin, flash,
           )}
         </div>
       </div>
+
+      {isSuperadmin && !isSubjectSuperadmin && (
+        <div class="danger-zone">
+          <h2>Danger Zone</h2>
+          <p>Permanently delete this user and all their sessions and tokens. This cannot be undone.</p>
+          <form method="post" action={`/admin/users/${subject.id}/delete`}
+            onsubmit={`return confirm('Delete user ${subject.username}? This is permanent and cannot be undone.')`}>
+            <button type="submit" class="btn btn-danger">Delete User</button>
+          </form>
+        </div>
+      )}
     </Layout>
   );
 };

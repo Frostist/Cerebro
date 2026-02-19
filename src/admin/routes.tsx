@@ -295,6 +295,29 @@ adminRouter.post('/admin/users/:id/revoke-token', async (c) => {
   return c.redirect(`/admin/users/${c.req.param('id')}`);
 });
 
+adminRouter.post('/admin/users/:id/delete', async (c) => {
+  const isSuperadmin = c.get('isSuperadmin') as boolean;
+  if (!isSuperadmin) return c.text('Forbidden', 403);
+
+  const db = getDb();
+  const subject = await db.get('SELECT * FROM users WHERE id = ?', c.req.param('id')) as any;
+  if (!subject) return c.text('Not found', 404);
+  if (subject.email === process.env.SUPERADMIN_EMAIL) {
+    setFlash(c, 'error', 'Cannot delete the superadmin account.');
+    return c.redirect(`/admin/users/${c.req.param('id')}`);
+  }
+
+  // Cascade: tokens, sessions, activity log entries, auth codes
+  await db.run('DELETE FROM oauth_tokens WHERE user_id = ?', subject.id);
+  await db.run('DELETE FROM admin_sessions WHERE user_id = ?', subject.id);
+  await db.run('DELETE FROM auth_codes WHERE user_id = ?', subject.id);
+  await db.run('DELETE FROM users WHERE id = ?', subject.id);
+
+  logActivity({ user_id: (c.get('user') as any).id, agent_label: null, tool_name: 'admin:delete_user', success: true, input_summary: `deleted user ${subject.username}` });
+  setFlash(c, 'success', `User ${subject.username} deleted.`);
+  return c.redirect('/admin/users');
+});
+
 // ─── Projects ────────────────────────────────────────────────────────────────
 
 adminRouter.get('/admin/projects', async (c) => {

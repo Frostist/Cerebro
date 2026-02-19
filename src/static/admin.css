@@ -175,6 +175,11 @@ body { font-family: system-ui, -apple-system, sans-serif; background: #f9fafb; c
 .definition-list dt { color: #6b7280; }
 .definition-list dd { font-weight: 500; }
 
+/* ── Danger zone ─────────────────────────────────────────────────────────── */
+.danger-zone { margin-top: 1.5rem; background: #fff; border: 1px solid #fca5a5; border-radius: 8px; padding: 1.25rem; }
+.danger-zone h2 { font-size: 0.9375rem; font-weight: 600; color: #dc2626; margin-bottom: 0.5rem; }
+.danger-zone p { font-size: 0.875rem; color: #6b7280; margin-bottom: 1rem; }
+
 /* ── Credentials page ────────────────────────────────────────────────────── */
 .creds-page { min-height: 100vh; background: #f9fafb; display: flex; align-items: flex-start; justify-content: center; padding: 3rem 1rem; }
 .creds-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 2rem; width: 100%; max-width: 560px; }
