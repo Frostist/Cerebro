@@ -1,0 +1,285 @@
+import { Hono } from 'hono';
+import { getDb } from '../db.ts';
+import { generateToken, generateId } from '../utils/crypto.ts';
+import { verifyCodeChallenge } from './pkce.ts';
+
+// In-memory rate limiter: 10 req/min per IP
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + 60_000 });
+    return true;
+  }
+  if (entry.count >= 10) return false;
+  entry.count++;
+  return true;
+}
+
+export const oauthRouter = new Hono();
+
+// OAuth Authorization Server Metadata
+oauthRouter.get('/.well-known/oauth-authorization-server', (c) => {
+  const base = process.env.BASE_URL ?? '';
+  return c.json({
+    issuer: base,
+    authorization_endpoint: `${base}/oauth/authorize`,
+    token_endpoint: `${base}/oauth/token`,
+    response_types_supported: ['code'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
+    code_challenge_methods_supported: ['S256'],
+    token_endpoint_auth_methods_supported: ['none'],
+  });
+});
+
+// Protected Resource Metadata
+oauthRouter.get('/.well-known/oauth-protected-resource', (c) => {
+  const base = process.env.BASE_URL ?? '';
+  return c.json({
+    resource: base,
+    authorization_servers: [base],
+    bearer_methods_supported: ['header'],
+  });
+});
+
+// GET /oauth/authorize — show login form
+oauthRouter.get('/oauth/authorize', (c) => {
+  const { client_id, redirect_uri, response_type, code_challenge, code_challenge_method, state } =
+    c.req.query();
+
+  if (response_type !== 'code' || !code_challenge) {
+    return c.text('Invalid request', 400);
+  }
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cerebro — Connect</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 2rem; width: 100%; max-width: 380px; }
+    h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
+    p { color: #6b7280; font-size: 0.875rem; margin-bottom: 1.5rem; }
+    label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.25rem; }
+    input { width: 100%; border: 1px solid #d1d5db; border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.875rem; margin-bottom: 1rem; }
+    input:focus { outline: 2px solid #2563EB; outline-offset: -1px; }
+    button { width: 100%; background: #2563EB; color: #fff; border: none; border-radius: 6px; padding: 0.625rem; font-size: 0.875rem; font-weight: 500; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    .error { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.875rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Connect to Cerebro</h1>
+    <p>Sign in to authorize your Claude agent.</p>
+    <form method="POST" action="/oauth/authorize">
+      <input type="hidden" name="client_id" value="${escapeHtml(client_id ?? '')}">
+      <input type="hidden" name="redirect_uri" value="${escapeHtml(redirect_uri ?? '')}">
+      <input type="hidden" name="response_type" value="code">
+      <input type="hidden" name="code_challenge" value="${escapeHtml(code_challenge)}">
+      <input type="hidden" name="code_challenge_method" value="${escapeHtml(code_challenge_method ?? 'S256')}">
+      <input type="hidden" name="state" value="${escapeHtml(state ?? '')}">
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" autocomplete="username" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <label for="agent_label">Connection name <span style="color:#6b7280;font-weight:400">(optional)</span></label>
+      <input id="agent_label" name="agent_label" type="text" placeholder="e.g. Work Claude">
+      <button type="submit">Authorize</button>
+    </form>
+  </div>
+</body>
+</html>`;
+
+  return c.html(html);
+});
+
+// POST /oauth/authorize — validate and issue code
+oauthRouter.post('/oauth/authorize', async (c) => {
+  const ip = c.req.header('x-forwarded-for') ?? 'unknown';
+  if (!checkRateLimit(ip)) return c.text('Too many requests', 429);
+
+  const body = await c.req.parseBody();
+  const { username, password, redirect_uri, code_challenge, code_challenge_method, state, agent_label } = body as Record<string, string>;
+
+  const db = getDb();
+  const user = db.query('SELECT * FROM users WHERE username = ? AND disabled = 0 AND confirmed = 1').get(username) as any;
+
+  if (!user || !(await Bun.password.verify(password, user.password_hash))) {
+    // Re-show form with error
+    const qs = new URLSearchParams({
+      redirect_uri: redirect_uri ?? '',
+      response_type: 'code',
+      code_challenge: code_challenge ?? '',
+      code_challenge_method: code_challenge_method ?? 'S256',
+      state: state ?? '',
+    });
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cerebro — Connect</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f5f5; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 2rem; width: 100%; max-width: 380px; }
+    h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
+    p { color: #6b7280; font-size: 0.875rem; margin-bottom: 1.5rem; }
+    label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.25rem; }
+    input { width: 100%; border: 1px solid #d1d5db; border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.875rem; margin-bottom: 1rem; }
+    input:focus { outline: 2px solid #2563EB; outline-offset: -1px; }
+    button { width: 100%; background: #2563EB; color: #fff; border: none; border-radius: 6px; padding: 0.625rem; font-size: 0.875rem; font-weight: 500; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    .error { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.875rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Connect to Cerebro</h1>
+    <p>Sign in to authorize your Claude agent.</p>
+    <div class="error">Invalid username or password.</div>
+    <form method="POST" action="/oauth/authorize">
+      <input type="hidden" name="redirect_uri" value="${escapeHtml(redirect_uri ?? '')}">
+      <input type="hidden" name="response_type" value="code">
+      <input type="hidden" name="code_challenge" value="${escapeHtml(code_challenge ?? '')}">
+      <input type="hidden" name="code_challenge_method" value="${escapeHtml(code_challenge_method ?? 'S256')}">
+      <input type="hidden" name="state" value="${escapeHtml(state ?? '')}">
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" value="${escapeHtml(username ?? '')}" autocomplete="username" required>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <label for="agent_label">Connection name <span style="color:#6b7280;font-weight:400">(optional)</span></label>
+      <input id="agent_label" name="agent_label" type="text" placeholder="e.g. Work Claude" value="${escapeHtml(agent_label ?? '')}">
+      <button type="submit">Authorize</button>
+    </form>
+  </div>
+</body>
+</html>`;
+    return c.html(html, 401);
+  }
+
+  // Issue auth code
+  const code = generateToken();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+  db.query(`
+    INSERT INTO auth_codes (code, user_id, code_challenge, expires_at, used)
+    VALUES (?, ?, ?, ?, 0)
+  `).run(code, user.id, code_challenge, expiresAt);
+
+  // Store agent_label temporarily in auth_code by embedding in code (we'll use state)
+  // Actually store it on the token after exchange; pass via query param to ourselves won't work
+  // Best: store in a short-lived map keyed by code
+  pendingAgentLabels.set(code, agent_label ?? '');
+
+  const callbackUrl = new URL(redirect_uri ?? 'https://claude.ai/api/mcp/auth_callback');
+  callbackUrl.searchParams.set('code', code);
+  if (state) callbackUrl.searchParams.set('state', state);
+
+  return c.redirect(callbackUrl.toString());
+});
+
+// Temporary in-memory store for agent_label during code exchange
+const pendingAgentLabels = new Map<string, string>();
+
+// POST /oauth/token
+oauthRouter.post('/oauth/token', async (c) => {
+  const ip = c.req.header('x-forwarded-for') ?? 'unknown';
+  if (!checkRateLimit(ip)) return c.text('Too many requests', 429);
+
+  const body = await c.req.parseBody();
+  const grantType = body['grant_type'] as string;
+
+  if (grantType === 'authorization_code') {
+    return handleAuthCode(c, body as Record<string, string>);
+  } else if (grantType === 'refresh_token') {
+    return handleRefreshToken(c, body as Record<string, string>);
+  }
+
+  return c.json({ error: 'unsupported_grant_type' }, 400);
+});
+
+async function handleAuthCode(c: any, body: Record<string, string>) {
+  const { code, code_verifier, redirect_uri } = body;
+  const db = getDb();
+
+  const authCode = db.query(`
+    SELECT * FROM auth_codes WHERE code = ? AND used = 0 AND expires_at > ?
+  `).get(code, new Date().toISOString()) as any;
+
+  if (!authCode) return c.json({ error: 'invalid_grant' }, 400);
+
+  const valid = await verifyCodeChallenge(code_verifier, authCode.code_challenge);
+  if (!valid) return c.json({ error: 'invalid_grant' }, 400);
+
+  // Mark used
+  db.query('UPDATE auth_codes SET used = 1 WHERE code = ?').run(code);
+
+  const accessToken = generateToken();
+  const refreshToken = generateToken();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString(); // 1 hour
+  const refreshExpiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
+  const agentLabel = pendingAgentLabels.get(code) ?? null;
+  pendingAgentLabels.delete(code);
+
+  // Revoke any existing token for this user
+  db.query('DELETE FROM oauth_tokens WHERE user_id = ?').run(authCode.user_id);
+
+  db.query(`
+    INSERT INTO oauth_tokens (access_token, user_id, refresh_token, agent_label, expires_at, scope)
+    VALUES (?, ?, ?, ?, ?, 'read write')
+  `).run(accessToken, authCode.user_id, refreshToken, agentLabel, expiresAt);
+
+  return c.json({
+    access_token: accessToken,
+    token_type: 'Bearer',
+    expires_in: 3600,
+    refresh_token: refreshToken,
+    scope: 'read write',
+  });
+}
+
+async function handleRefreshToken(c: any, body: Record<string, string>) {
+  const { refresh_token } = body;
+  const db = getDb();
+
+  const token = db.query('SELECT * FROM oauth_tokens WHERE refresh_token = ?').get(refresh_token) as any;
+  if (!token) return c.json({ error: 'invalid_grant' }, 400);
+
+  const accessToken = generateToken();
+  const newRefresh = generateToken();
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+  db.query(`
+    DELETE FROM oauth_tokens WHERE refresh_token = ?
+  `).run(refresh_token);
+
+  db.query(`
+    INSERT INTO oauth_tokens (access_token, user_id, refresh_token, agent_label, expires_at, scope)
+    VALUES (?, ?, ?, ?, ?, 'read write')
+  `).run(accessToken, token.user_id, newRefresh, token.agent_label, expiresAt);
+
+  return c.json({
+    access_token: accessToken,
+    token_type: 'Bearer',
+    expires_in: 3600,
+    refresh_token: newRefresh,
+    scope: 'read write',
+  });
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
