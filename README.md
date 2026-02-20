@@ -21,6 +21,12 @@ Cerebro is a production-ready task management server that exposes a standardized
 
 Cerebro is a task management server that exposes a standardized MCP interface, allowing AI agents to create, track, and manage tasks through a clean REST API. It includes a modern admin dashboard for manual oversight.
 
+## Deployment
+
+Cerebro is very easy to deploy to [Railway](https://railway.app) and will cost less than **$5/month** to run. Simply connect this repo and Railway will handle the rest.
+
+> **Note:** You need a dedicated public URL for the MCP OAuth flow to work. You cannot test it locally with Claude without running Claude in [developer/MCP dev mode](https://modelcontextprotocol.io/docs/tools/inspector).
+
 ## Quick Setup
 
 ```bash
