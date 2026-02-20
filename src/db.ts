@@ -258,27 +258,24 @@ async function createSchema(db: DbAdapter, dialect: 'sqlite' | 'postgres'): Prom
 // ─── Superadmin seed ──────────────────────────────────────────────────────────
 
 async function seedSuperadmin(db: DbAdapter): Promise<void> {
-  const email = process.env.SUPERADMIN_EMAIL;
+  const username = process.env.SUPERADMIN_USERNAME;
   const initialPassword = process.env.SUPERADMIN_INITIAL_PASSWORD;
-  if (!email || !initialPassword) return;
+  if (!username || !initialPassword) return;
 
-  const existing = await db.get('SELECT id FROM users WHERE email = ?', email);
+  const existing = await db.get('SELECT id FROM users WHERE username = ?', username);
   if (existing) return;
 
-  const username = await uniqueUsername(db);
   const hash = await Bun.password.hash(initialPassword, { algorithm: 'argon2id' });
   const now = new Date().toISOString();
   const id = generateId();
 
   await db.run(
     `INSERT INTO users (id, name, email, username, password_hash, role, confirmed, disabled, created_at, updated_at)
-     VALUES (?, 'Superadmin', ?, ?, ?, 'admin', 1, 0, ?, ?)`,
-    id, email, username, hash, now, now,
+     VALUES (?, 'Superadmin', NULL, ?, ?, 'admin', 1, 0, ?, ?)`,
+    id, username, hash, now, now,
   );
 
   console.log('⚠️  Superadmin created — change your password immediately.');
-  console.log(`👤  Superadmin username: ${username}`);
-  console.log(`🔑  Superadmin password: ${initialPassword}`);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

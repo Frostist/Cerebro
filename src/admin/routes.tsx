@@ -70,8 +70,8 @@ adminRouter.get('/admin/login', async (c) => {
   if (!isProd) {
     const db = getDb();
     const superadmin = await db.get(
-      'SELECT username FROM users WHERE email = ? AND disabled = 0',
-      process.env.SUPERADMIN_EMAIL ?? ''
+      'SELECT username FROM users WHERE username = ? AND disabled = 0',
+      process.env.SUPERADMIN_USERNAME ?? ''
     ) as any;
     if (superadmin) {
       devHint = { username: superadmin.username, password: process.env.SUPERADMIN_INITIAL_PASSWORD ?? '' };
