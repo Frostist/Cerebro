@@ -17,6 +17,8 @@ Cerebro is a production-ready task management server that exposes a standardized
 
 **Use cases:** Track tasks across a company or project team, give each team member's AI assistant access to shared task data, manage cross-user workflows.
 
+![Admin Dashboard](Readme_Assets/admin_dashboard.png)
+
 ## What is Cerebro?
 
 Cerebro is a task management server that exposes a standardized MCP interface, allowing AI agents to create, track, and manage tasks through a clean REST API. It includes a modern admin dashboard for manual oversight.
