@@ -16,12 +16,12 @@ export const Layout: FC<PropsWithChildren<LayoutProps>> = ({ title, user, isSupe
       <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>{title ? `${title} — Cerebro` : 'Cerebro'}</title>
+        <title>{title ? `${title} — 🧠 Cerebro` : '🧠 Cerebro'}</title>
         <link rel="stylesheet" href="/static/admin.css" />
       </head>
       <body>
         <nav class="nav">
-          <a href="/admin" class="nav-brand">Cerebro</a>
+          <a href="/admin" class="nav-brand">🧠 Cerebro</a>
           <div class="nav-links">
             <a href="/admin">Dashboard</a>
             <a href="/admin/users">Users</a>

@@ -259,7 +259,7 @@ async function createSchema(db: DbAdapter, dialect: 'sqlite' | 'postgres'): Prom
 
 async function seedSuperadmin(db: DbAdapter): Promise<void> {
   const username = process.env.SUPERADMIN_USERNAME;
-  const initialPassword = process.env.SUPERADMIN_INITIAL_PASSWORD;
+  const initialPassword = process.env.SUPERADMIN_PASSWORD;
   if (!username || !initialPassword) return;
 
   const existing = await db.get('SELECT id FROM users WHERE username = ?', username);

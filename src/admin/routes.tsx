@@ -74,7 +74,7 @@ adminRouter.get('/admin/login', async (c) => {
       process.env.SUPERADMIN_USERNAME ?? ''
     ) as any;
     if (superadmin) {
-      devHint = { username: superadmin.username, password: process.env.SUPERADMIN_INITIAL_PASSWORD ?? '' };
+      devHint = { username: superadmin.username, password: process.env.SUPERADMIN_PASSWORD ?? '' };
     }
   }
   return c.html(<LoginPage devHint={devHint} />);
