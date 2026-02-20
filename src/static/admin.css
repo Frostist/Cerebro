@@ -133,6 +133,7 @@ body { font-family: system-ui, -apple-system, sans-serif; background: #f9fafb; c
 /* ── Sections ────────────────────────────────────────────────────────────── */
 .section { margin-top: 2rem; }
 .section h2 { font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; }
+.section p { margin-bottom: 0.75rem; }
 .link-more { display: inline-block; margin-top: 0.75rem; font-size: 0.875rem; color: #2563EB; text-decoration: none; }
 .link-more:hover { text-decoration: underline; }
 .empty { color: #6b7280; font-size: 0.875rem; margin: 0.5rem 0; }

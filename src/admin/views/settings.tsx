@@ -9,9 +9,10 @@ interface SettingsProps {
   flash?: { type: 'success' | 'error'; message: string } | null;
   tokenCount: number;
   csrfToken?: string;
+  isPostgres?: boolean;
 }
 
-export const SettingsPage: FC<SettingsProps> = ({ user, isSuperadmin, flash, tokenCount, csrfToken }) => {
+export const SettingsPage: FC<SettingsProps> = ({ user, isSuperadmin, flash, tokenCount, csrfToken, isPostgres }) => {
   return (
     <Layout title="Settings" user={user} isSuperadmin={isSuperadmin} flash={flash} csrfToken={csrfToken}>
       <div class="page-header">
@@ -31,7 +32,7 @@ export const SettingsPage: FC<SettingsProps> = ({ user, isSuperadmin, flash, tok
 
       <div class="section">
         <h2>Database Export</h2>
-        <p>Download a copy of the SQLite database file.</p>
+        <p>{isPostgres ? 'Download a JSON dump of all database tables.' : 'Download a copy of the SQLite database file.'}</p>
         <form method="post" action="/admin/settings/export-db">
           <input type="hidden" name="_csrf" value={csrfToken ?? ''} />
           <button type="submit" class="btn btn-secondary">Export Database</button>

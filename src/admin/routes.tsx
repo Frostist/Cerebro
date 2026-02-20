@@ -2,7 +2,7 @@
 import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { adminAuth } from './middleware.ts';
-import { getDb, uniqueUsername, logActivity } from '../db.ts';
+import { getDb, getDbDialect, uniqueUsername, logActivity } from '../db.ts';
 import { generateId, generateToken, generateViewToken, encryptFlash, decryptFlash } from '../utils/crypto.ts';
 import { generatePassword } from '../utils/username.ts';
 import { LoginPage } from './views/login.tsx';
@@ -70,11 +70,11 @@ adminRouter.get('/admin/login', async (c) => {
   if (!isProd) {
     const db = getDb();
     const superadmin = await db.get(
-      'SELECT username FROM users WHERE email = ? AND disabled = 0',
-      process.env.SUPERADMIN_EMAIL ?? ''
+      'SELECT username FROM users WHERE username = ? AND disabled = 0',
+      process.env.SUPERADMIN_USERNAME ?? ''
     ) as any;
     if (superadmin) {
-      devHint = { username: superadmin.username, password: process.env.SUPERADMIN_INITIAL_PASSWORD ?? '' };
+      devHint = { username: superadmin.username, password: process.env.SUPERADMIN_PASSWORD ?? '' };
     }
   }
   return c.html(<LoginPage devHint={devHint} />);
@@ -433,7 +433,8 @@ adminRouter.get('/admin/settings', async (c) => {
   const db = getDb();
   const tokenCount = ((await db.get('SELECT COUNT(*) as n FROM oauth_tokens')) as any).n;
   const csrfToken = c.get('csrfToken') as string;
-  return c.html(<SettingsPage user={user} isSuperadmin={isSuperadmin} flash={flash} tokenCount={tokenCount} csrfToken={csrfToken} />);
+  const isPostgres = getDbDialect() === 'postgres';
+  return c.html(<SettingsPage user={user} isSuperadmin={isSuperadmin} flash={flash} tokenCount={tokenCount} csrfToken={csrfToken} isPostgres={isPostgres} />);
 });
 
 adminRouter.post('/admin/settings/revoke-all-tokens', async (c) => {
@@ -449,6 +450,31 @@ adminRouter.post('/admin/settings/export-db', async (c) => {
   if (!await verifyCsrf(c)) return c.text('Invalid CSRF token', 403);
   const isSuperadmin = c.get('isSuperadmin') as boolean;
   if (!isSuperadmin) return c.text('Forbidden', 403);
+
+  const dialect = getDbDialect();
+  const date = new Date().toISOString().slice(0, 10);
+
+  if (dialect === 'postgres') {
+    try {
+      const db = getDb();
+      const tables = ['users', 'projects', 'project_members', 'tasks', 'task_comments', 'task_dependencies', 'oauth_tokens', 'auth_codes', 'admin_sessions', 'activity_log'];
+      const dump: Record<string, any[]> = {};
+      for (const table of tables) {
+        dump[table] = await db.all(`SELECT * FROM ${table}`);
+      }
+      const json = JSON.stringify(dump, null, 2);
+      return new Response(json, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Disposition': `attachment; filename="cerebro-backup-${date}.json"`,
+        },
+      });
+    } catch {
+      setFlash(c, 'error', 'Failed to export database.');
+      return c.redirect('/admin/settings');
+    }
+  }
+
   const dbPath = process.env.DATABASE_PATH ?? './taskmanager.db';
   try {
     const file = Bun.file(dbPath);
@@ -456,7 +482,7 @@ adminRouter.post('/admin/settings/export-db', async (c) => {
     return new Response(buffer, {
       headers: {
         'Content-Type': 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="cerebro-backup-${new Date().toISOString().slice(0, 10)}.db"`,
+        'Content-Disposition': `attachment; filename="cerebro-backup-${date}.db"`,
       },
     });
   } catch {

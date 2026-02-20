@@ -13,6 +13,9 @@ export interface DbAdapter {
 }
 
 let _adapter: DbAdapter | null = null;
+let _dialect: 'sqlite' | 'postgres' = 'sqlite';
+
+export function getDbDialect(): 'sqlite' | 'postgres' { return _dialect; }
 
 export function getDb(): DbAdapter {
   if (!_adapter) throw new Error('DB not initialised — call initDb() first');
@@ -72,6 +75,7 @@ export async function initDb(): Promise<void> {
   if (databaseUrl) {
     console.log('🐘  Using Postgres');
     _adapter = await makePgAdapter(databaseUrl);
+    _dialect = 'postgres';
     await createSchema(_adapter, 'postgres');
   } else {
     const isProd = process.env.NODE_ENV === 'production';
@@ -258,27 +262,24 @@ async function createSchema(db: DbAdapter, dialect: 'sqlite' | 'postgres'): Prom
 // ─── Superadmin seed ──────────────────────────────────────────────────────────
 
 async function seedSuperadmin(db: DbAdapter): Promise<void> {
-  const email = process.env.SUPERADMIN_EMAIL;
-  const initialPassword = process.env.SUPERADMIN_INITIAL_PASSWORD;
-  if (!email || !initialPassword) return;
+  const username = process.env.SUPERADMIN_USERNAME;
+  const initialPassword = process.env.SUPERADMIN_PASSWORD;
+  if (!username || !initialPassword) return;
 
-  const existing = await db.get('SELECT id FROM users WHERE email = ?', email);
+  const existing = await db.get('SELECT id FROM users WHERE username = ?', username);
   if (existing) return;
 
-  const username = await uniqueUsername(db);
   const hash = await Bun.password.hash(initialPassword, { algorithm: 'argon2id' });
   const now = new Date().toISOString();
   const id = generateId();
 
   await db.run(
     `INSERT INTO users (id, name, email, username, password_hash, role, confirmed, disabled, created_at, updated_at)
-     VALUES (?, 'Superadmin', ?, ?, ?, 'admin', 1, 0, ?, ?)`,
-    id, email, username, hash, now, now,
+     VALUES (?, 'Superadmin', NULL, ?, ?, 'admin', 1, 0, ?, ?)`,
+    id, username, hash, now, now,
   );
 
   console.log('⚠️  Superadmin created — change your password immediately.');
-  console.log(`👤  Superadmin username: ${username}`);
-  console.log(`🔑  Superadmin password: ${initialPassword}`);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

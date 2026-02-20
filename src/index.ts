@@ -129,5 +129,6 @@ console.log(`✅  MCP SSE:         ${base}/mcp/sse`);
 console.log(`✅  MCP HTTP:        ${base}/mcp`);
 console.log(`✅  Admin UI:        ${base}/admin`);
 console.log(`✅  OAuth discovery: ${base}/.well-known/oauth-authorization-server`);
+console.log(`\n😎  Made by Frostist. Support on GitHub: https://github.com/Frostist`);
 
 export default { port, fetch: app.fetch };
