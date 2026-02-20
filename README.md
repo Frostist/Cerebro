@@ -27,7 +27,12 @@ Cerebro is very easy to deploy to [Railway](https://railway.app) and will cost l
 
 > **Note:** You need a dedicated public URL for the MCP OAuth flow to work. You cannot test it locally with Claude without running Claude in [developer/MCP dev mode](https://modelcontextprotocol.io/docs/tools/inspector).
 
-## Quick Setup
+1. Fork this Repo
+2. Make it Private
+3. Connect your Github to Railway and deploy
+4. Copy the .env.example to Railway vars and edit as need be.
+
+## Quick Setup for Dev
 
 ```bash
 # Install dependencies
