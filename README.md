@@ -55,6 +55,3 @@ The server runs on `http://localhost:3000` by default.
 ## License
 
 MIT
-
-<!-- SEO -->
- Topics: mcp, model-context-protocol, task-manager, claude-ai, team-tasks, project-management, bun, hono
