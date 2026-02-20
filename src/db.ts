@@ -13,6 +13,9 @@ export interface DbAdapter {
 }
 
 let _adapter: DbAdapter | null = null;
+let _dialect: 'sqlite' | 'postgres' = 'sqlite';
+
+export function getDbDialect(): 'sqlite' | 'postgres' { return _dialect; }
 
 export function getDb(): DbAdapter {
   if (!_adapter) throw new Error('DB not initialised — call initDb() first');
@@ -72,6 +75,7 @@ export async function initDb(): Promise<void> {
   if (databaseUrl) {
     console.log('🐘  Using Postgres');
     _adapter = await makePgAdapter(databaseUrl);
+    _dialect = 'postgres';
     await createSchema(_adapter, 'postgres');
   } else {
     const isProd = process.env.NODE_ENV === 'production';
