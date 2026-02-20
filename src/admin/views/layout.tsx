@@ -17,6 +17,7 @@ export const Layout: FC<PropsWithChildren<LayoutProps>> = ({ title, user, isSupe
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>{title ? `${title} — 🧠 Cerebro` : '🧠 Cerebro'}</title>
+        <link rel="icon" href="/static/favicon.ico" type="image/x-icon" />
         <link rel="stylesheet" href="/static/admin.css" />
       </head>
       <body>
