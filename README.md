@@ -31,6 +31,8 @@ Cerebro is very easy to deploy to [Railway](https://railway.app) and will cost l
 2. Make it Private
 3. Connect your Github to Railway and deploy
 4. Copy the .env.example to Railway vars and edit as need be.
+5. YOU need to pick either a Database Path or Databaase URL, the URL is setup in the .env.example file for Railway by default.
+6. Create the Postgress db in Railway and it should connect automatically.
 
 ## Quick Setup for Dev
 
