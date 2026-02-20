@@ -34,6 +34,14 @@ You can also easily deploy with Railway templates with this button below:
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/w-L8xJ?referralCode=WbXk0b&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
 ## Quick Setup
+1. Fork this Repo
+2. Make it Private
+3. Connect your Github to Railway and deploy
+4. Copy the .env.example to Railway vars and edit as need be.
+5. YOU need to pick either a Database Path or Databaase URL, the URL is setup in the .env.example file for Railway by default.
+6. Create the Postgress db in Railway and it should connect automatically.
+
+## Quick Setup for Dev
 
 ```bash
 # Install dependencies
