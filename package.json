@@ -1,7 +1,7 @@
 {
   "name": "cerebro",
-  "version": "1.0.0",
-  "description": "MCP Task Manager — Claude.ai Connector + Admin UI",
+  "version": "1.1.0",
+  "description": "AI MCP Task Manager",
   "type": "module",
   "scripts": {
     "start": "bun run src/index.ts",
