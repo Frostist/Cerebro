@@ -132,8 +132,15 @@ export function registerTaskTools(server: McpServer) {
         `SELECT td.task_id AS id, t.title FROM task_dependencies td JOIN tasks t ON td.task_id = t.id WHERE td.blocked_task_id = ?`,
         task_id,
       );
+      const notes = await db.all(`
+        SELECT n.*, u.name AS creator_name
+        FROM notes n
+        JOIN users u ON n.created_by = u.id
+        WHERE n.task_id = ?
+        ORDER BY n.updated_at DESC
+      `, task_id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_get', success: true });
-      const result = { task, comments, blocks, blockedBy };
+      const result = { task, comments, blocks, blockedBy, notes };
       return { structuredContent: result, content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
     },
   );

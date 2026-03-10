@@ -15,6 +15,7 @@ interface DashboardProps {
     inProgressTasks: number;
     overdueTasks: number;
     dueSoonTasks: number;
+    totalNotes: number;
   };
   recentActivity: any[];
 }
@@ -53,6 +54,10 @@ export const DashboardPage: FC<DashboardProps> = ({ user, isSuperadmin, flash, s
         <div class="stat-card">
           <div class="stat-value">{stats.dueSoonTasks}</div>
           <div class="stat-label">Due in 24h</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">{stats.totalNotes}</div>
+          <div class="stat-label">Notes</div>
         </div>
       </div>
 

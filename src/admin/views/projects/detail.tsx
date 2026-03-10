@@ -10,10 +10,11 @@ interface ProjectDetailProps {
   project: any;
   members: any[];
   tasks: any[];
+  notes: any[];
   csrfToken?: string;
 }
 
-export const ProjectDetailPage: FC<ProjectDetailProps> = ({ user, isSuperadmin, flash, project, members, tasks, csrfToken }) => {
+export const ProjectDetailPage: FC<ProjectDetailProps> = ({ user, isSuperadmin, flash, project, members, tasks, notes, csrfToken }) => {
   const statusColor: Record<string, string> = {
     pending: 'badge-gray',
     in_progress: 'badge-blue',
@@ -81,6 +82,25 @@ export const ProjectDetailPage: FC<ProjectDetailProps> = ({ user, isSuperadmin, 
           </table>
         )}
       </div>
+      <div class="section">
+        <h2>Notes ({notes.length})</h2>
+        {notes.length === 0 ? (
+          <p class="empty">No notes yet.</p>
+        ) : (
+          <div class="notes-list">
+            {notes.map((n) => (
+              <div key={n.id} class="note-card">
+                <div class="note-header">
+                  <strong>{n.title}</strong>
+                  <span class="meta">by {n.creator_name} • {new Date(n.updated_at).toLocaleDateString()}</span>
+                </div>
+                <div class="note-content">{n.content.slice(0, 200)}{n.content.length > 200 ? '...' : ''}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
     </Layout>
   );
 };

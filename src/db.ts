@@ -257,6 +257,39 @@ async function createSchema(db: DbAdapter, dialect: 'sqlite' | 'postgres'): Prom
       END $$
     `);
   }
+
+  // ─── Notes tables ───────────────────────────────────────────────────────────
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS notes (
+      id          TEXT PRIMARY KEY,
+      title       TEXT NOT NULL,
+      content     TEXT NOT NULL,
+      created_by  TEXT NOT NULL REFERENCES users(id),
+      project_id  TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      task_id     TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL
+    )
+  `);
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS note_members (
+      note_id     TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      user_id     TEXT NOT NULL REFERENCES users(id),
+      can_edit    INTEGER NOT NULL DEFAULT 0,
+      added_at    TEXT NOT NULL,
+      added_by    TEXT NOT NULL REFERENCES users(id),
+      PRIMARY KEY (note_id, user_id)
+    )
+  `);
+
+  // Notes indexes
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_notes_project ON notes(project_id)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_notes_task ON notes(task_id)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_notes_creator ON notes(created_by)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_note_members_note ON note_members(note_id)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_note_members_user ON note_members(user_id)`);
 }
 
 // ─── Superadmin seed ──────────────────────────────────────────────────────────
