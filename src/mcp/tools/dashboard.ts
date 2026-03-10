@@ -48,6 +48,16 @@ tasks_set_dependencies → Declare that task A blocks task B. Pass blocks_task_i
 users_list            → List confirmed, active users (id, name, username, role). Always call this before assigning tasks.
 users_get             → Get a single user profile by user_id.
 
+notes_create          → Create a new note. Can be personal, linked to a project, or linked to a task.
+notes_list            → List notes accessible to the user (owned, shared, project-linked, task-linked).
+notes_get             → Get a single note with its share information.
+notes_update          → Update note title or content (if owner or has edit permission).
+notes_append          → Add content to the end of an existing note.
+notes_delete          → Delete a note (owner only for personal, owner/admin for project/task notes).
+notes_share           → Share a personal note with another user (read-only or editable).
+notes_unshare         → Remove a user from a shared note.
+notes_list_shares     → List who has access to a personal note.
+
 ── PROMPTS ───────────────────────────────────────────
 daily_standup         → Generates a standup summary (in_progress, overdue, due-soon). Optional user_id filter.
 project_brief         → Structured brief for a project: goals, team, status, blockers, next actions. Requires project_id.
@@ -121,12 +131,33 @@ assign_unassigned_tasks → Suggests assignees for unassigned tasks and offers t
       )) as any).n;
       const totalUsers = ((await db.get("SELECT COUNT(*) as n FROM users WHERE confirmed = 1 AND disabled = 0")) as any).n;
 
+      const totalNotes = ((await db.get(`
+        SELECT COUNT(*) as n FROM notes n
+        WHERE n.created_by = ?
+          OR n.id IN (SELECT note_id FROM note_members WHERE user_id = ?)
+          OR n.project_id IN (SELECT project_id FROM project_members WHERE user_id = ?)
+          OR n.task_id IN (
+            SELECT t.id FROM tasks t
+            JOIN project_members pm ON t.project_id = pm.project_id
+            WHERE pm.user_id = ?
+          )
+      `, userId, userId, userId, userId)) as any).n;
+
+      const personalNotes = ((await db.get(`
+        SELECT COUNT(*) as n FROM notes WHERE created_by = ? AND project_id IS NULL AND task_id IS NULL
+      `, userId)) as any).n;
+
+      const sharedNotes = ((await db.get(`
+        SELECT COUNT(*) as n FROM note_members WHERE user_id = ?
+      `, userId)) as any).n;
+
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'dashboard_get', success: true });
 
       const result = {
         tasks: { total: totalTasks, pending: pendingTasks, in_progress: inProgressTasks, completed: completedTasks, cancelled: cancelledTasks, overdue: overdueTasks, due_soon: dueSoonTasks },
         projects: { total: totalProjects },
         users: { total: totalUsers },
+        notes: { total: totalNotes, personal: personalNotes, shared_with_me: sharedNotes },
       };
       return { structuredContent: result, content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
     },

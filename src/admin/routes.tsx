@@ -138,6 +138,7 @@ adminRouter.get('/admin', async (c) => {
     inProgressTasks: ((await db.get("SELECT COUNT(*) as n FROM tasks WHERE status='in_progress'")) as any).n,
     overdueTasks: ((await db.get("SELECT COUNT(*) as n FROM tasks WHERE due_date < ? AND status NOT IN ('completed','cancelled')", now)) as any).n,
     dueSoonTasks: ((await db.get("SELECT COUNT(*) as n FROM tasks WHERE due_date >= ? AND due_date <= ? AND status NOT IN ('completed','cancelled')", now, in24h)) as any).n,
+    totalNotes: ((await db.get("SELECT COUNT(*) as n FROM notes")) as any).n,
   };
   const recentActivity = await db.all(`
     SELECT al.*, u.name as user_name FROM activity_log al
@@ -159,7 +160,8 @@ adminRouter.get('/admin/users', async (c) => {
   const users = q
     ? await db.all("SELECT * FROM users WHERE username LIKE ? OR name LIKE ? ORDER BY created_at DESC", `%${q}%`, `%${q}%`)
     : await db.all("SELECT * FROM users ORDER BY created_at DESC");
-  return c.html(<UsersListPage user={user} isSuperadmin={isSuperadmin} flash={flash} users={users} filter={q} />);
+  const csrfToken = c.get('csrfToken') as string;
+  return c.html(<UsersListPage user={user} isSuperadmin={isSuperadmin} flash={flash} users={users} filter={q} csrfToken={csrfToken} />);
 });
 
 adminRouter.get('/admin/users/new', (c) => {
@@ -397,8 +399,13 @@ adminRouter.get('/admin/projects/:id', async (c) => {
     LEFT JOIN users u ON t.assigned_to = u.id
     WHERE t.project_id = ? ORDER BY t.created_at DESC
   `, c.req.param('id'));
+  const notes = await db.all(`
+    SELECT n.*, u.name as creator_name FROM notes n
+    JOIN users u ON n.created_by = u.id
+    WHERE n.project_id = ? ORDER BY n.updated_at DESC
+  `, c.req.param('id'));
   const csrfToken = c.get('csrfToken') as string;
-  return c.html(<ProjectDetailPage user={user} isSuperadmin={isSuperadmin} flash={flash} project={project} members={members} tasks={tasks} csrfToken={csrfToken} />);
+  return c.html(<ProjectDetailPage user={user} isSuperadmin={isSuperadmin} flash={flash} project={project} members={members} tasks={tasks} notes={notes} csrfToken={csrfToken} />);
 });
 
 adminRouter.post('/admin/projects/:id/delete', async (c) => {
