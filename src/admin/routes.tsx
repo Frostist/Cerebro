@@ -160,7 +160,8 @@ adminRouter.get('/admin/users', async (c) => {
   const users = q
     ? await db.all("SELECT * FROM users WHERE username LIKE ? OR name LIKE ? ORDER BY created_at DESC", `%${q}%`, `%${q}%`)
     : await db.all("SELECT * FROM users ORDER BY created_at DESC");
-  return c.html(<UsersListPage user={user} isSuperadmin={isSuperadmin} flash={flash} users={users} filter={q} />);
+  const csrfToken = c.get('csrfToken') as string;
+  return c.html(<UsersListPage user={user} isSuperadmin={isSuperadmin} flash={flash} users={users} filter={q} csrfToken={csrfToken} />);
 });
 
 adminRouter.get('/admin/users/new', (c) => {
