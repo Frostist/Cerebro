@@ -105,8 +105,15 @@ export function registerProjectTools(server: McpServer) {
         WHERE t.project_id = ?
         ORDER BY t.created_at DESC
       `, project_id);
+      const notes = await db.all(`
+        SELECT n.*, u.name AS creator_name
+        FROM notes n
+        JOIN users u ON n.created_by = u.id
+        WHERE n.project_id = ?
+        ORDER BY n.updated_at DESC
+      `, project_id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'projects_get', success: true });
-      const result = { project, members, tasks };
+      const result = { project, members, tasks, notes };
       return { structuredContent: result, content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
     },
   );
