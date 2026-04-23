@@ -12,6 +12,7 @@ import { registerProjectTools } from './mcp/tools/projects.ts';
 import { registerTaskTools } from './mcp/tools/tasks.ts';
 import { registerUserTools } from './mcp/tools/users.ts';
 import { registerNoteTools } from './mcp/tools/notes.ts';
+import { registerTagTools } from './mcp/tools/tags.ts';
 import { registerDashboardTools } from './mcp/tools/dashboard.ts';
 import { initResources } from './mcp/resources.ts';
 import { registerPrompts } from './mcp/prompts.ts';
@@ -109,6 +110,7 @@ function buildMcpServer(): McpServer {
   registerTaskTools(server);
   registerUserTools(server);
   registerNoteTools(server);
+  registerTagTools(server);
   registerDashboardTools(server);
   initResources(server);
   registerPrompts(server);

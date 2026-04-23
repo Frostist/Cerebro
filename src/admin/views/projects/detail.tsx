@@ -66,14 +66,21 @@ export const ProjectDetailPage: FC<ProjectDetailProps> = ({ user, isSuperadmin, 
         ) : (
           <table class="table">
             <thead>
-              <tr><th>Title</th><th>Status</th><th>Priority</th><th>Assigned To</th><th>Due</th></tr>
+              <tr><th>Title</th><th>Status</th><th>Priority</th><th>Tags</th><th>Assigned To</th><th>Due</th></tr>
             </thead>
             <tbody>
               {tasks.map((t) => (
                 <tr key={t.id}>
-                  <td>{t.title}</td>
+                  <td>
+                    {t.title}
+                  </td>
                   <td><span class={`badge ${statusColor[t.status] ?? 'badge-gray'}`}>{t.status}</span></td>
                   <td><span class={`badge ${priorityColor[t.priority] ?? 'badge-gray'}`}>{t.priority}</span></td>
+                  <td>
+                    {t.tags?.map((tag: any) => (
+                      <span class="badge badge-gray" style="margin-right: 4px;">{tag.name}</span>
+                    ))}
+                  </td>
                   <td>{t.assignee_name ?? '—'}</td>
                   <td class="mono nowrap">{t.due_date ? new Date(t.due_date).toLocaleDateString() : '—'}</td>
                 </tr>

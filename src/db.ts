@@ -290,6 +290,27 @@ async function createSchema(db: DbAdapter, dialect: 'sqlite' | 'postgres'): Prom
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_notes_creator ON notes(created_by)`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_note_members_note ON note_members(note_id)`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_note_members_user ON note_members(user_id)`);
+
+  // ─── Tags tables ────────────────────────────────────────────────────────────
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS tags (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS task_tags (
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      tag_id  TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+      PRIMARY KEY (task_id, tag_id)
+    )
+  `);
+
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_task_tags_task ON task_tags(task_id)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_task_tags_tag ON task_tags(tag_id)`);
 }
 
 // ─── Superadmin seed ──────────────────────────────────────────────────────────
