@@ -57,6 +57,17 @@ export interface TaskComment {
   created_at: string;
 }
 
+export interface Tag {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface TaskTag {
+  task_id: string;
+  tag_id: string;
+}
+
 export interface OAuthToken {
   access_token: string;
   user_id: string;

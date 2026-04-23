@@ -398,7 +398,11 @@ adminRouter.get('/admin/projects/:id', async (c) => {
     SELECT t.*, u.name as assignee_name FROM tasks t
     LEFT JOIN users u ON t.assigned_to = u.id
     WHERE t.project_id = ? ORDER BY t.created_at DESC
-  `, c.req.param('id'));
+  `, c.req.param('id')) as any[];
+  // Attach tags for the UI
+  for (const t of tasks) {
+    t.tags = await db.all('SELECT tg.name FROM tags tg JOIN task_tags tt ON tg.id = tt.tag_id WHERE tt.task_id = ?', t.id);
+  }
   const notes = await db.all(`
     SELECT n.*, u.name as creator_name FROM notes n
     JOIN users u ON n.created_by = u.id

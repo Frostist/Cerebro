@@ -68,14 +68,15 @@ export function registerTaskTools(server: McpServer) {
   // tasks_list
   server.tool(
     'tasks_list',
-    'List tasks, optionally filtered by project or status',
+    'List tasks, optionally filtered by project, status, or tag',
     {
       project_id: z.string().optional(),
       status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']).optional(),
       assigned_to: z.string().optional(),
+      tag_name: z.string().optional(),
     },
     { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
-    async ({ project_id, status, assigned_to }, extra) => {
+    async ({ project_id, status, assigned_to, tag_name }, extra) => {
       const user = (extra.authInfo?.extra as any)?.user;
       const agentLabel = ((extra.authInfo?.extra as any)?.agentLabel as string) ?? user?.username ?? 'unknown';
       const db = getDb();
@@ -96,11 +97,24 @@ export function registerTaskTools(server: McpServer) {
       }
       if (status) { conditions.push('t.status = ?'); params.push(status); }
       if (assigned_to) { conditions.push('t.assigned_to = ?'); params.push(assigned_to); }
+      if (tag_name) {
+        conditions.push('t.id IN (SELECT task_id FROM task_tags tt JOIN tags tg ON tt.tag_id = tg.id WHERE tg.name = ?)');
+        params.push(tag_name.trim().toLowerCase());
+      }
 
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-      const tasks = await db.all(`${ENRICHED_TASK_SQL} ${where} ORDER BY t.created_at DESC`, ...params);
+      const tasks = await db.all(`${ENRICHED_TASK_SQL} ${where} ORDER BY t.created_at DESC`, ...params) as any[];
+
+      // Attach tags to each task
+      for (const task of tasks) {
+        task.tags = await db.all(
+          'SELECT tg.* FROM tags tg JOIN task_tags tt ON tg.id = tt.tag_id WHERE tt.task_id = ?',
+          task.id
+        );
+      }
+
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_list', success: true });
-      const result = { tasks };
+      const result = { tasks, count: tasks.length };
       return { structuredContent: result, content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
     },
   );
@@ -132,6 +146,10 @@ export function registerTaskTools(server: McpServer) {
         `SELECT td.task_id AS id, t.title FROM task_dependencies td JOIN tasks t ON td.task_id = t.id WHERE td.blocked_task_id = ?`,
         task_id,
       );
+      const tags = await db.all(
+        'SELECT tg.* FROM tags tg JOIN task_tags tt ON tg.id = tt.tag_id WHERE tt.task_id = ?',
+        task_id
+      );
       const notes = await db.all(`
         SELECT n.*, u.name AS creator_name
         FROM notes n
@@ -140,7 +158,7 @@ export function registerTaskTools(server: McpServer) {
         ORDER BY n.updated_at DESC
       `, task_id);
       logActivity({ user_id: user?.id ?? null, agent_label: agentLabel, tool_name: 'tasks_get', success: true });
-      const result = { task, comments, blocks, blockedBy, notes };
+      const result = { task, comments, blocks, blockedBy, notes, tags };
       return { structuredContent: result, content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
     },
   );
